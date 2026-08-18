@@ -12,8 +12,7 @@ OBJS :=
 all: $(BUILD_DIR)/firmware.bin
 
 # System includes
-include GD32F30x_standard_peripheral/module.mk
-include CMSIS/module.mk
+include gd_system/module.mk
 # User main application
 include main/module.mk
 # User components
