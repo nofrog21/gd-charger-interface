@@ -1,0 +1,14 @@
+menu "Charger Driver"
+
+     choice CHARGER_TARGET
+            prompt "Set target for charger driver"
+            default CHARGER_TARGET_DX1230
+            help
+                This option sets driver for charger
+
+            config CHARGER_TARGET_DX1230
+                bool "Driver for TBB DX1230"
+            config CHARGER_TARGET_MDX
+                bool "Driver for TBB MDX1360 or MDX1260"
+     endchoice
+endmenu

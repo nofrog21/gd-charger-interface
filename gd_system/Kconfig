@@ -1,0 +1,12 @@
+menu "GigaDevice"
+     choice GD_TARGET
+            prompt "Set target MC"
+            default GD_TARGET_GD32F303
+            help
+                This option sets target MC
+            config GD_TARGET_GD32F303
+                bool "GD32F303 mc family"
+            config GD_TARGET_GD32F305
+                bool "GD32F305 mc family"
+      endchoice
+endmenu

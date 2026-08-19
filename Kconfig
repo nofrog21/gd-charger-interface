@@ -1,0 +1,3 @@
+mainmenu "Charger Interface Configuration"
+source "components/Kconfig"
+source "gd_system/Kconfig"
