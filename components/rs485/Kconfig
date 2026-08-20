@@ -1,0 +1,12 @@
+menu "RS485"
+     choice RS485_USART
+            prompt "Set USART port"
+            default RS485_USART0
+            help
+                This option sets USART port used to interact with GD32 HAL
+            config RS485_USART0
+                   bool "USART0"
+            config RS485_USART1
+                   bool "USART1"
+      endchoice
+endmenu
