@@ -1,4 +1,3 @@
-int main(void)
+void app_main(void)
 {
-	return 0;
 }

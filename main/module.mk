@@ -1,2 +1,2 @@
-SRCS += main/gd32f30x_it.c main/main.c
+SRCS += main/main.c main/system.c
 CFLAGS += -Imain

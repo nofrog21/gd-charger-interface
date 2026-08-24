@@ -8,5 +8,7 @@ menu "GigaDevice"
                 bool "GD32F303 mc family"
             config GD_TARGET_GD32F305
                 bool "GD32F305 mc family"
+            config GD_TARGET_GD32F103
+                bool "GD32F103 mc family"
       endchoice
 endmenu

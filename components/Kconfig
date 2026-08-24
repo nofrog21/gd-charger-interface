@@ -1,3 +1,4 @@
 menu "Components"
 source "components/charger_driver/Kconfig"
+source "components/rs485/Kconfig"
 endmenu
