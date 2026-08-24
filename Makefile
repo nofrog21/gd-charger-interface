@@ -1,4 +1,4 @@
-.PHONY: all clean menuconfig
+.PHONY: all clean menuconfig flash
 
 BUILD_DIR := build
 
@@ -11,7 +11,30 @@ OBJCOPY := arm-none-eabi-objcopy
 SRCS :=
 OBJS :=
 
+# Macros
+define gen_gdbinit
+mkdir -p $(BUILD_DIR)/gdbinit
+echo "file $(BUILD_DIR)/firmware.elf" > $(BUILD_DIR)/gdbinit/symbols
+printf "%s\n" \
+"target remote :3333" \
+"monitor reset halt" \
+"maintenance flush register-cache" \
+"thbreak main" \
+"continue" \
+> $(BUILD_DIR)/gdbinit/connect
+printf "%s\n" \
+"source $(BUILD_DIR)/gdbinit/symbols" \
+"source $(BUILD_DIR)/gdbinit/connect" \
+> $(BUILD_DIR)/gdbinit/gdbinit
+endef
+
 all: $(BUILD_DIR)/firmware.bin
+
+flash: $(BUILD_DIR)/firmware.bin
+	openocd -f openocd.cfg -c "program $(BUILD_DIR)/firmware.bin 0x08000000 verify reset exit"
+
+genconfig:
+	.venv/bin/genconfig --header-path $(BUILD_DIR)/generated/autoconf.h Kconfig
 
 menuconfig:
 	.venv/bin/menuconfig Kconfig
@@ -40,7 +63,11 @@ $(BUILD_DIR)/%.o: %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -MMD -MP -c $< -o $@
 
 $(BUILD_DIR)/firmware.bin: $(BUILD_DIR)/firmware.elf
-	$(OBJCOPY) -O binary $^ $@
+	$(OBJCOPY) -O binary -R .bss -R .heap_stack $^ $@
+	$(gen_gdbinit)
+$(BUILD_DIR)/firmware.hex: $(BUILD_DIR)/firmware.elf
+	$(OBJCOPY) -O ihex -R .bss -R .heap_stack $^ $@
+	$(gen_gdbinit)
 
 -include $(DEPS)
 
