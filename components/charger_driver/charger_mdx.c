@@ -1,5 +1,5 @@
+#include "gd32f30x_gpio.h"
 #include "charger.h"
-#include "driver/gpio.h"
 #define LOG_ENABLE
 #include "log.h"
 
@@ -170,7 +170,7 @@ int chrg_find()
 {
 #define LOG_TAG "init_charger"
 	//uart_setup(config.lock_handle);
-	gpio_set_direction(TOGGLE_POWER_GPIO, GPIO_MODE_OUTPUT);
+	gpio_init(GPIOA, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, TOGGLE_POWER_GPIO);
 
 	memset(settings_msg, 0, sizeof(settings_msg));
 	chrg_toggle_power(1);
@@ -222,5 +222,12 @@ void chrg_clear_settings()
 
 void chrg_toggle_power(int status)
 {
-	gpio_set_level(TOGGLE_POWER_GPIO, status);
+#define LOG_TAG "chrg_toggle_power"
+	if (status) {
+		gpio_bit_set(GPIOA, TOGGLE_POWER_GPIO);
+	} else {
+		gpio_bit_reset(GPIOA, TOGGLE_POWER_GPIO);
+	}
+	LOG("toggle power to %d", status);
+#undef LOG_TAG
 }

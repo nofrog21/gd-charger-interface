@@ -1,7 +1,6 @@
 #include "autoconf.h"
 #ifdef CONFIG_GD_TARGET_GD32F303
-#include "core_cm4.h"
-#include "system_gd32f30x.h"
+#include "gd32f30x.h"
 #endif // CONFIG_GD_TARGET_GD32F303
 
 #ifdef CONFIG_GD_TARGET_GD32F103
@@ -21,7 +20,7 @@ int __io_getchar(void)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
 	SysTick_Config(SystemCoreClock / 1000);
 	app_main();

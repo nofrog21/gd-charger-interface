@@ -1,9 +1,10 @@
 #ifndef UART_H
 #define UART_H
+#include "autoconf.h"
+#include "rs485.h"
+
 #include <stdint.h>
 #include <stdbool.h>
-#include "sdkconfig.h"
-#include "rs485.h"
 
 #if defined(CONFIG_CHARGER_TARGET_MDX)
 #define CHRG_BIDIRECTIONAL

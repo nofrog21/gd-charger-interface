@@ -1,6 +1,8 @@
 #ifndef LOG_H
 #define LOG_H
-#include "esp_log.h"
+#undef LOG_ENABLE
+#undef LOG_ENABLE_WARNING
+#undef LOG_ENABLE_ERROR
 #ifdef LOG_ENABLE
 #define SET_TAG(x)          const char *LOG_TAG = (x)
 #define LOG(fmt, ...) ESP_LOGI(LOG_TAG, fmt, ##__VA_ARGS__)

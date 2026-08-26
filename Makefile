@@ -1,9 +1,9 @@
-.PHONY: all clean menuconfig flash
+.PHONY: all clean menuconfig flash gdbinit
 
 BUILD_DIR := build
 
 CC := arm-none-eabi-gcc
-CPPFLAGS += -I$(BUILD_DIR)/generated
+CPPFLAGS := -I$(BUILD_DIR)/generated
 CFLAGS := -Wall -Wextra -ggdb -ffunction-sections -fdata-sections \
 -specs=nano.specs -specs=nosys.specs
 LDFLAGS := -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/output.map
@@ -28,12 +28,13 @@ printf "%s\n" \
 > $(BUILD_DIR)/gdbinit/gdbinit
 endef
 
-all: $(BUILD_DIR)/firmware.bin
+all: $(BUILD_DIR)/firmware.bin $(BUILD_DIR)/generated/autoconf.h .config
 
 flash: $(BUILD_DIR)/firmware.bin
 	openocd -f openocd.cfg -c "program $(BUILD_DIR)/firmware.bin 0x08000000 verify reset exit"
 
 genconfig:
+	@mkdir -p $(BUILD_DIR)/generated
 	.venv/bin/genconfig --header-path $(BUILD_DIR)/generated/autoconf.h Kconfig
 
 menuconfig:
@@ -47,10 +48,10 @@ $(BUILD_DIR)/generated/autoconf.h .config: Kconfig
 
 # System includes
 include gd_system/module.mk
+# User components
+include components/module.mk
 # User main application
 include main/module.mk
-# User components
-#include components/module.mk
 
 OBJS += $(patsubst %.c,$(BUILD_DIR)/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
@@ -64,10 +65,11 @@ $(BUILD_DIR)/%.o: %.c
 
 $(BUILD_DIR)/firmware.bin: $(BUILD_DIR)/firmware.elf
 	$(OBJCOPY) -O binary -R .bss -R .heap_stack $^ $@
-	$(gen_gdbinit)
 $(BUILD_DIR)/firmware.hex: $(BUILD_DIR)/firmware.elf
 	$(OBJCOPY) -O ihex -R .bss -R .heap_stack $^ $@
+gdbinit:
 	$(gen_gdbinit)
+
 
 -include $(DEPS)
 

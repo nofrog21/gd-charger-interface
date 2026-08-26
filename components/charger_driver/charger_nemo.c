@@ -1,6 +1,6 @@
-#include "esp_timer.h"
+#include "gd32f30x_gpio.h"
 #include "charger.h"
-#include "driver/gpio.h"
+#include "sys_clock.h"
 #define LOG_ENABLE
 #include "log.h"
 
@@ -10,7 +10,8 @@ const uint8_t CHRG_MAX_CURRENT = 30;
 const uint8_t CHRG_MIN_CURRENT = 5;
 const uint8_t INSTANCE = 1;
 
-#define TOGGLE_POWER_GPIO     0
+// TODO: поменять на gd совместимые
+#define TOGGLE_POWER_GPIO 0
 #define DRY_CTRL_GPIO 5
 
 #ifndef ARRAY_SIZE
@@ -132,7 +133,7 @@ int chrg_get_rt_data(struct chrg_runtime_data *rt_data)
 	int err;
 	uint32_t sz = STATUS_MSG_SZ;
 	if (charger_manual_turnoff &&
-	    (esp_timer_get_time() - charger_manual_turnoff_time) > 5000000) {
+	    (sys_clock_get_ms() - charger_manual_turnoff_time) > 5000000) {
 		chrg_toggle_power(1);
 		charger_manual_turnoff = 0;
 	}
@@ -147,7 +148,7 @@ int chrg_get_rt_data(struct chrg_runtime_data *rt_data)
 	if (bytetos(status_msg[8], status_msg[9]) < DEFAULT_TURNOFF_V) {
 		chrg_toggle_power(0);
 		charger_manual_turnoff = 1;
-		charger_manual_turnoff_time = esp_timer_get_time();
+		charger_manual_turnoff_time = sys_clock_get_ms();
 		return -1;
 	}
 	if (!rt_data) return 0;
@@ -184,7 +185,7 @@ void chrg_get_config(struct chrg_config *config)
 int chrg_find()
 {
 	int err = 0;
-	gpio_set_direction(TOGGLE_POWER_GPIO, GPIO_MODE_OUTPUT);
+	gpio_init(GPIOA, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, TOGGLE_POWER_GPIO);
 	chrg_toggle_power(1);
 	uint32_t sz = ARRAY_SIZE(status_msg);
 	err = request_msg(
@@ -290,342 +291,11 @@ void chrg_clear_settings()
 void chrg_toggle_power(int status)
 {
 #define LOG_TAG "chrg_toggle_power"
-	gpio_set_level(TOGGLE_POWER_GPIO, status);
+	if (status) {
+		gpio_bit_set(GPIOA, TOGGLE_POWER_GPIO);
+	} else {
+		gpio_bit_reset(GPIOA, TOGGLE_POWER_GPIO);
+	}
 	LOG("toggle power to %d", status);
 #undef LOG_TAG
 }
-
-#if 0 // deprecated
-
-esp_err_t init_charger(ChargerInitConfig config)
-{
-#define LOG_TAG "init_charger"
-	uart_setup(config.lock_handle);
-#if 0
-	gpio_config_t io_conf = {
-		.intr_type = GPIO_INTR_DISABLE,
-		.mode = GPIO_MODE_OUTPUT,
-		.pin_bit_mask = TOGGLE_POWER_GPIO_SEL,
-		.pull_down_en = 0,
-		.pull_up_en = 0,
-	};
-	gpio_config(&io_conf);
-#endif // Временно выключен
-	// Подключение датчика температуры
-#if 0
-	gpio_set_direction(TOGGLE_POWER_GPIO, GPIO_MODE_OUTPUT);
-	gpio_set_pull_mode(TEMP_PIN_GPIO, GPIO_PULLUP_ONLY);
-	gpio_input_enable(TEMP_PIN_GPIO);
-	size_t found;
-	ds18x20_scan_devices(TEMP_PIN_GPIO, &temp_addr, 1, &found);
-	if (!found) {
-		ERROR("Temperature device not found");
-	}
-#endif // depricated
-	toggle_power(1);
-	// Ищем зарядное устройство
-	wait_for_charger(status_msg, ARRAY_SIZE(status_msg));
-	CHRG_NAME = *status_msg;
-	// Получение первоначальных данных конфигурации
-	{
-		esp_err_t res = ESP_FAIL;
-		while (1) {
-			res = req_conf_msg();
-			if (res != ESP_OK) {
-				WARNING("Charger is disconnected");
-			} else {
-				break;
-			}
-			vTaskDelay(pdMS_TO_TICKS(1000));
-		}
-	}
-	// Устанавливаем max_charger_rate в 0.10 для простой настройки тока
-	if (charger_settings_u16(MAX_CHARGE_RATE) != 10) {
-		// BUG: if set settings failed we have new values instead of old ones
-		uint16_t new_battery_bank_sz =
-		    charger_settings_u16(BATTERY_CAP) *
-		    charger_settings_u16(MAX_CHARGE_RATE) * 0.1f;
-		charger_settings_high(BATTERY_CAP) = new_battery_bank_sz & 0xFF;
-
-		charger_settings_low(BATTERY_CAP) = new_battery_bank_sz >> 8;
-		charger_settings_high(MAX_CHARGE_RATE) = 0x00;
-		charger_settings_low(MAX_CHARGE_RATE) = 0x0A;
-		uint16_t data_to_send[] = {
-			charger_settings_u16(BATTERY_CAP),
-			charger_settings_u16(MAX_CHARGE_RATE)
-		};
-
-		LOG("Battery cap: %hu; Max charge rate: %hu",
-		    charger_settings_u16(BATTERY_CAP),
-		    charger_settings_u16(MAX_CHARGE_RATE));
-		int data_ids[] = {BATTERY_CAP, MAX_CHARGE_RATE};
-		int err = set_settings(data_to_send,
-		    ARRAY_SIZE(data_to_send), data_ids);
-		if (err != -1) {
-			// Попытаемся установить настройки еще раз, иначе вернем ошибку
-			err = set_settings(data_to_send + err,
-			    ARRAY_SIZE(data_to_send) - err, data_ids + err);
-			if (err != -1)
-				return ESP_FAIL;
-		}
-	}
-	/* if (charger_settings_u16(SMART_CONNECT_DIFF) + */
-	/*     charger_settings_u16(SMART_DISCONNECT_VOLTAGE) <= 1310) { */
-	// Если напряжение включения стоит меньше 13.20В меняем его
-	uint16_t data_to_send[] =
-	    {1310 - charger_settings_u16(SMART_DISCONNECT_VOLTAGE)};
-	int data_ids[] = {SMART_CONNECT_DIFF};
-	int err = set_settings(data_to_send,
-	    ARRAY_SIZE(data_to_send), data_ids);
-	if (err != -1) {
-		err = set_settings(data_to_send + err,
-		    ARRAY_SIZE(data_to_send) - err, data_ids + err);
-		if (err != -1)
-			return ESP_FAIL;
-	}
-	return ESP_OK;
-#undef LOG_TAG
-}
-
-int set_max_charging_current(uint8_t current)
-{
-#define LOG_TAG "set_max_charging_current"
-	if (current >= 5) {
-		if (charger_manual_turnoff) {
-			LOG("Charger is turned off, enabling...");
-			toggle_power(1);
-			return 1;
-		}
-		uint16_t data_to_send[] = {current * 100};
-		int data_ids[] = {BATTERY_CAP};
-		return set_settings(data_to_send, ARRAY_SIZE(data_to_send), data_ids);
-	}
-	WARNING("Charger is turning off, current is %hhu", current);
-	// Зарядное устройство выключается
-	toggle_power(0);
-	return ESP_OK;
-#undef LOG_TAG
-}
-
-esp_err_t get_charger_state(ChargerState *state)
-{
-	if (!get_charger_status_msg()) {
-		return ESP_FAIL;
-	}
-	state->input_voltage = bytetos(status_msg[8], status_msg[9]) / 100;
-	state->input_current = bytetos(status_msg[10], status_msg[11]) / 100;
-	state->output_voltage = bytetos(status_msg[12], status_msg[13]) / 100;
-	state->output_current = bytetos(status_msg[14], status_msg[15]) / 100;
-	switch (status_msg[30] << 8 | status_msg[31]) {
-	case 0x2008: state->status = BULK; break;
-	case 0x2009: state->status = ABSORPTION; break;
-	case 0x200A: state->status = FLOW_LEVEL; break;
-	case 0x200F: state->status = NO_CHARGING; break;
-	case 0x201F: state->status = OUT_VOLTAGE_LOW_ERR; break;
-	case 0x202F: state->status = OUT_VOLTAGE_HIGH_ERR; break;
-	case 0xA008: state->status = INPUT_VOLTAGE_HIGH_ERR; break;
-	}
-
-	return ESP_OK;
-}
-
-void get_charger_config(ChargerConfig *config)
-{
-	config->alg = 2;
-	config->mode = 0;
-	// TODO: proper battery type deduction
-	switch(charger_settings_u16(BATTERY_TYPE)) {
-	case 4: config->battery_type = 3; break;
-	default: config->battery_type = 2; break;
-	}
-	config->battery_bank_sz = charger_settings_u16(BATTERY_CAP) * 0.1f;
-	config->max_current = charger_settings_u16(BATTERY_CAP) *
-	    charger_settings_u16(MAX_CHARGE_RATE) * 0.001f;
-}
-
-void rv_c_assign_instance(uint8_t instance)
-{
-	charger_instance = instance;
-}
-
-/*!
- * Запрос конфигурационного сообщения
- */
-static esp_err_t req_conf_msg()
-{
-	static uint8_t master_message[8] = {0x00, 0x03, 0x00, 0x00, 0x00, 0xFF};
-	static uint8_t exp_header_data[] = {0x00, 0x03, 0x00, 0xFF};
-	master_message[0] = CHRG_NAME;
-	exp_header_data[0] = CHRG_NAME;
-	MessageHeader exp_header = {
-		.size = 4,
-		.data = exp_header_data,
-	};
-	int sz = request_message(master_message,
-	    ARRAY_SIZE(master_message), charger_settings, ARRAY_SIZE(charger_settings));
-	return check_message(charger_settings, sz, &exp_header);
-}
-
-/*!
- * @breif Установить настройки зарядного устройства
- */
-static int set_settings(const uint16_t *data_to_send, int sz,
-    const int *data_ids)
-{
-#define LOG_TAG "set_settings"
-	esp_err_t err;
-	static uint8_t r_message[12];
-	static uint8_t master_message[10] = {0x00, 0x06, 0x00, 0x00, 0x00, 0x02};
-	master_message[0] = CHRG_NAME;
-	for (size_t i = 0; i < sz; ++i) {
-		if ((data_to_send[i] == 0xFFFF)) continue;
-		master_message[3] = data_ids[i];
-		master_message[6] = data_to_send[i] >> 8;
-		master_message[7] = data_to_send[i] & 0xFF;
-		MessageHeader exp_header = {
-			.size = 6,
-			.data = master_message,
-		};
-
-		int rm_sz = request_message(master_message,
-		    ARRAY_SIZE(master_message), r_message, ARRAY_SIZE(r_message));
-		err = check_message(r_message, rm_sz, &exp_header);
-		if (err != ESP_OK) {
-			ERROR("0x%.2X failed", data_ids[i]);
-			return i;
-		}
-		// Обновляем значения параметров после успешной записи
-		charger_settings_high(data_ids[i]) = master_message[6];
-		charger_settings_low(data_ids[i]) = master_message[7];
-	}
-	return -1;
-#undef LOG_TAG
-}
-
-/*!
- * @brief Проверка сообщения на корректность полей заголовка
- *
- * @return
- *     - ESP_OK: Все хорошо
- *     - ESP_ERR_INVALID_RESPONSE: Некорректный ответ от устройства
- *     - ESP_FAIL: Не верный формат ответа
- */
-static esp_err_t check_message(const uint8_t *data, int size,
-    const MessageHeader *exp_header)
-{
-#define LOG_TAG "check_message"
-	esp_err_t res = check_message_checksum(data, size);
-	if (res != ESP_OK) {
-		return ESP_FAIL;
-	}
-	bool broadcast = (*exp_header->data == 0);
-	if ((size == exp_header->size +
-		exp_header->data[exp_header->size - 1] + 2) &&
-	    compare_messages(exp_header->data + broadcast,
-		data + broadcast,
-		exp_header->size - broadcast))
-	{
-		return ESP_OK;
-	}
-	ERROR("Headers are not equal");
-	return ESP_ERR_INVALID_RESPONSE;
-#undef LOG_TAG
-}
-
-static void toggle_power(uint8_t status)
-{
-	gpio_set_level(TOGGLE_POWER_GPIO, status);
-	charger_manual_turnoff = !status;
-}
-
-/**
- * @breif Чтение сообщения состояния зарядного устройства и запись в глобальный буфер
- *
- * @return
- *     - true: Состояние зарядного устройства обновлено
- *     - false: Зарядное устройство не отвечает на команды или ошибка при чтении ответа
- */
-static bool get_charger_status_msg()
-{
-#define LOG_TAG "get_charger_status_msg"
-	static uint8_t master_message[8] = {0x00, 0x03, 0x01, 0x00, 0x00, 0x1E};
-	static uint8_t exp_header_data[] = {0x00, 0x03, 0x00, 0x1E};
-	static uint64_t last_time_called = 0;
-	static bool ok = false;
-	static int cnt = 0;
-	static bool should_enable = 1;
-	uint64_t time_diff = esp_timer_get_time() - last_time_called;
-	// Если вызов раньше чем периуд отправки статуса вернуть последний результат
-	if (time_diff < 1ll * STATUS_MESSAGE_PERIOD * 1000) {
-		return ok;
-	}
-	last_time_called = esp_timer_get_time();
-	master_message[0] = CHRG_NAME;
-	exp_header_data[0] = CHRG_NAME;
-	MessageHeader exp_header = {
-		.size = 4,
-		.data = exp_header_data,
-	};
-	int sz = request_message(master_message, ARRAY_SIZE(master_message),
-	    status_msg,
-	    ARRAY_SIZE(status_msg));
-	esp_err_t res = check_message(status_msg, sz, &exp_header);
-
-	if (res != ESP_OK) {
-		charger_state = 0;
-		charger_errors = 0xFFFF;
-		if (should_enable) {
-			toggle_power(1);
-			should_enable = 0;
-		}
-		ok = false;
-		return ok;
-	}
-
-	charger_state = 1;
-	uint16_t inv = bytetos(status_msg[8], status_msg[9]);
-	if (inv < DEFAULT_TURNOFF_V) {
-		++cnt;
-		if (cnt > 3) {
-			should_enable = 1;
-			WARNING("Charger is turning off, voltage: %f", inv * 0.01f);
-			toggle_power(0);
-			cnt = 0;
-		}
-	} else {
-		cnt = 0;
-	}
-	charger_errors = bytetos(status_msg[30], status_msg[31]);
-	ok = true;
-	return ok;
-#undef LOG_TAG
-}
-
-/*!
- * @breif Ждем включения зарядного устройства
- *
- */
-static void wait_for_charger(uint8_t *data, size_t length)
-{
-#define LOG_TAG "wait_for_charger"
-	MessageHeader exp_header = {
-		.size = 6,
-		.data = (uint8_t []) {0x00, 0xFF, 0x80, 0x07, 0x00, 0x02},
-	};
-	esp_err_t res = ESP_FAIL;
-	while (1) {
-		int sz = request_message(find_charger_msg,
-		    ARRAY_SIZE(find_charger_msg),
-		    data, length);
-		res = check_message(data, sz, &exp_header);
-		if (res != ESP_OK) {
-			WARNING("Charger is not found");
-			vTaskDelay(pdMS_TO_TICKS(1000));
-		} else {
-			break;
-		}
-	}
-#undef LOG_TAG
-}
-
-#endif
