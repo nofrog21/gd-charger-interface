@@ -3,7 +3,10 @@
 ## Сборка
 
 ``` shell
-make GD_TARGET=... # GD32F303 для RS485, GD32F305 для CAN
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+make menuconfig
+BUILD_DIR=... make # по умолчанию build
 ```
 
 Выходные файлы firwmare.elf, firmware.bin, output.map
