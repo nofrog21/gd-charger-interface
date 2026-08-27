@@ -1,0 +1,4 @@
+[submodule "thirdparty/rvcbus"]
+	path = thirdparty/rvcbus
+	url = git@github.com:nofrog21/rvcbus.git
+	branch = develop
