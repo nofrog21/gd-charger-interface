@@ -40,7 +40,7 @@ genconfig:
 menuconfig:
 	.venv/bin/menuconfig Kconfig
 
-$(BUILD_DIR)/generated/autoconf.h .config: Kconfig
+$(BUILD_DIR)/generated/autoconf.h: Kconfig .config
 	@mkdir -p $(BUILD_DIR)/generated
 	.venv/bin/genconfig --header-path $(BUILD_DIR)/generated/autoconf.h $<
 

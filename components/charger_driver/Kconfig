@@ -1,4 +1,4 @@
-menu "Charger Driver"
+menu "Charger Driver Configuration"
 
      choice CHARGER_TARGET
             prompt "Set target for charger driver"
