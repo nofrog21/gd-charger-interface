@@ -2,3 +2,6 @@
 	path = thirdparty/rvcbus
 	url = git@github.com:nofrog21/rvcbus.git
 	branch = develop
+[submodule "tracker"]
+	path = tracker
+	url = ./tracker/.git
