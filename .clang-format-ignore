@@ -1,0 +1,3 @@
+# Paths clang-format must never touch (clang-format >= 18).
+# Vendored GD32F1xx / GD32F30x standard-peripheral libs and CMSIS headers.
+gd_system/

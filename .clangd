@@ -1,0 +1,3 @@
+CompileFlags:
+  Add: [-Wno-unknown-warning-option, -Wno-unused-function, -Wno-unused-variable]
+  Remove: [-m*, -f*, -Wunused-includes]

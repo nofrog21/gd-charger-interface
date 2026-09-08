@@ -28,7 +28,7 @@ printf "%s\n" \
 > $(BUILD_DIR)/gdbinit/gdbinit
 endef
 
-all: $(BUILD_DIR)/firmware.bin $(BUILD_DIR)/generated/autoconf.h .config
+all: $(BUILD_DIR)/generated/autoconf.h $(BUILD_DIR)/firmware.bin
 
 flash: $(BUILD_DIR)/firmware.bin
 	openocd -f openocd.cfg -c "program $(BUILD_DIR)/firmware.bin 0x08000000 verify reset exit"

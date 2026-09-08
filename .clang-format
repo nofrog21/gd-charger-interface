@@ -1,0 +1,77 @@
+# clang-format configuration for the charger_interface firmware.
+#
+# Captures the house style used under components/ and main/: one hard tab per
+# nesting level (rendered 4 wide), 80 column limit, opening brace on its own
+# line for function definitions, K&R braces elsewhere, space after C-style
+# casts, manually grouped includes, pointer glued to the name.
+#
+# The vendored GD32 / CMSIS sources under gd_system/ are excluded from
+# formatting: see gd_system/.clang-format (DisableFormat) and
+# .clang-format-ignore.
+
+Language: Cpp
+BasedOnStyle: LLVM
+
+# --- Indentation -------------------------------------------------------------
+UseTab: ForIndentation          # tabs for indentation, spaces for alignment
+IndentWidth: 8                   # one hard tab per nesting level
+TabWidth: 8
+ContinuationIndentWidth: 4
+IndentCaseLabels: false
+IndentPPDirectives: AfterHash   # nested directives -> "#  define" inside #ifdef
+PPIndentWidth: 2
+
+# --- Braces ----------------------------------------------------------------- -
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterControlStatement: MultiLine   # own-line brace only when the condition
+                                     # itself wrapped onto several lines
+  AfterEnum: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeElse: false
+  BeforeWhile: false
+  SplitEmptyFunction: true
+  IndentBraces: false
+
+# --- Line breaking ------------------------------------------------------- -
+ColumnLimit: 80 
+BreakBeforeBinaryOperators: None
+BinPackArguments: false
+BinPackParameters: false
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AlwaysBreakAfterReturnType: None
+
+# --- Alignment -------------------------------------------------------- -
+AlignAfterOpenBracket: DontAlign
+AlignConsecutiveMacros: AcrossComments   # value columns are aligned by hand
+                                         # in the register/flag define blocks
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignEscapedNewlines: Left
+AlignTrailingComments: true
+DerivePointerAlignment: false
+PointerAlignment: Right
+
+# --- Spacing --------------------------------------------------------- -
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+SpaceBeforeAssignmentOperators: true
+SpacesBeforeTrailingComments: 1
+
+# --- Includes / comments ------------------------------------------ -
+SortIncludes: false             # include order is manual (grouped, not sorted)
+IncludeBlocks: Preserve
+ReflowComments: false
+
+# --- Misc ------------------------------------------------------- -
+Cpp11BracedListStyle: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
