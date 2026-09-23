@@ -16,7 +16,7 @@ define gen_gdbinit
 mkdir -p $(BUILD_DIR)/gdbinit
 echo "file $(BUILD_DIR)/firmware.elf" > $(BUILD_DIR)/gdbinit/symbols
 printf "%s\n" \
-"target remote :3333" \
+"target extended-remote :3333" \
 "monitor reset halt" \
 "maintenance flush register-cache" \
 "thbreak main" \

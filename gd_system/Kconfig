@@ -1,4 +1,4 @@
-menu "GigaDevice"
+menu "GigaDevice Configuration"
      choice GD_TARGET
             prompt "Set target MC"
             default GD_TARGET_GD32F303

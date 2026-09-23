@@ -578,9 +578,12 @@ static void system_clock_hxtal(void)
     uint32_t timeout = 0U;
     uint32_t stab_flag = 0U;
     __IO uint32_t reg_temp;
-
     /* enable HXTAL */
     RCU_CTL |= RCU_CTL_HXTALEN;
+
+#ifdef CONFIG_GD_HXTAL_BYPASS
+    RCU_CTL |= RCU_CTL_HXTALBPS;
+#endif
     
     /* wait until HXTAL is stable or the startup time is longer than HXTAL_STARTUP_TIMEOUT */
     do{
@@ -718,6 +721,10 @@ static void system_clock_72m_hxtal(void)
 
     /* enable HXTAL */
     RCU_CTL |= RCU_CTL_HXTALEN;
+
+#ifdef CONFIG_GD_HXTAL_BYPASS
+    RCU_CTL |= RCU_CTL_HXTALBPS;
+#endif
 
     /* wait until HXTAL is stable or the startup time is longer than HXTAL_STARTUP_TIMEOUT */
     do{
@@ -903,6 +910,10 @@ static void system_clock_120m_hxtal(void)
     /* enable HXTAL */
     RCU_CTL |= RCU_CTL_HXTALEN;
 
+#ifdef CONFIG_GD_HXTAL_BYPASS
+    RCU_CTL |= RCU_CTL_HXTALBPS;
+#endif
+
     /* wait until HXTAL is stable or the startup time is longer than HXTAL_STARTUP_TIMEOUT */
     do{
         timeout++;
@@ -911,8 +922,7 @@ static void system_clock_120m_hxtal(void)
 
     /* if fail */
     if(0U == (RCU_CTL & RCU_CTL_HXTALSTB)){
-        while(1){
-        }
+	    __builtin_trap();
     }
 
     RCU_APB1EN |= RCU_APB1EN_PMUEN;
@@ -931,9 +941,11 @@ static void system_clock_120m_hxtal(void)
     RCU_CFG0 &= ~(RCU_CFG0_PLLSEL | RCU_CFG0_PREDV0);
     RCU_CFG0 |= (RCU_PLLSRC_HXTAL_IRC48M | RCU_CFG0_PREDV0);
 
-    /* CK_PLL = (CK_HXTAL/2) * 30 = 120 MHz */
+    /* Input HXTAL is 24MHz */
+    /* TODO: add to Kconfig */
+    /* CK_PLL = (CK_HXTAL/2) * 10 = 120 MHz */
     RCU_CFG0 &= ~(RCU_CFG0_PLLMF | RCU_CFG0_PLLMF_4 | RCU_CFG0_PLLMF_5);
-    RCU_CFG0 |= RCU_PLL_MUL30;
+    RCU_CFG0 |= RCU_PLL_MUL10;
 
 #elif defined(GD32F30X_CL)
     /* CK_PLL = (CK_PREDIV0) * 30 = 120 MHz */
@@ -975,8 +987,10 @@ static void system_clock_120m_hxtal(void)
     RCU_CFG0 = reg_temp;
 
     /* wait until PLL is selected as system clock */
-    while(0U == (RCU_CFG0 & RCU_SCSS_PLL)){
+    timeout = 10000;
+    while(0U == (RCU_CFG0 & RCU_SCSS_PLL) && timeout--){
     }
+    if (timeout == 0) __builtin_trap();
 }
 #endif /* __SYSTEM_CLOCK_IRC8M */
 

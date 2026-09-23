@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifdef CONFIG_RS485_USART0
+#if defined (CONFIG_RS485_USART0)
 #  define USART_PORT          USART0
 #  define GPIO_USART_PORT     GPIOA
 #  define RCU_USART_PORT      RCU_USART0
@@ -70,7 +70,11 @@ static void rs485_latch_rx_errors(void)
 	}
 }
 
+#if defined(CONFIG_RS485_USART0)
 void USART0_IRQHandler(void)
+#elif defined(CONFIG_RS485_USART1)
+void USART1_IRQHandler(void)
+#endif
 {
 	// Receive data
 	if (RESET != usart_interrupt_flag_get(USART_PORT, USART_INT_FLAG_RBNE))
@@ -133,7 +137,6 @@ void rs485_init(void)
 	rx_errors = 0;
 	nvic_irq_enable(USART_PORT_IRQn, 0, 0);
 	usart_interrupt_enable(USART_PORT, USART_INT_RBNE);
-	usart_interrupt_enable(USART_PORT, USART_INT_TBE);
 	usart_enable(USART_PORT);
 }
 
@@ -162,6 +165,7 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 		// not enough space
 		return -RS485_ENOSPACE;
 	}
+	usart_interrupt_enable(USART_PORT, USART_INT_TBE);
 	// wait until the ISR has pushed every queued byte into the data
 	// register, otherwise the USART_FLAG_TC test below can pass on a stale
 	// flag and cut the frame short when DE/RE are switched back.
@@ -171,6 +175,7 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 	{
 		__WFI();
 	}
+	usart_interrupt_disable(USART_PORT, USART_INT_TBE);
 	// wait until the last byte has left the shift register
 	while (RESET == usart_flag_get(USART_PORT, USART_FLAG_TC)) {
 		__WFI();

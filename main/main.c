@@ -11,6 +11,8 @@
 
 static bool charger_is_off = false;
 
+#define UNREACHABLE __asm__ ("BKPT")
+
 static int handle_rvcb_config_command(struct rvcb_chrg_cnfgc *rx_can_data)
 {
 	int err = 0;
@@ -389,6 +391,8 @@ void app_main()
 		},
 		.ev_handler = can_ev_handler,
 		.sa_range_start = RVCB_POWER_COMPONENTS,
+		.mempool = malloc(RVCB_MIN_MEMPOOL_SZ + 32),
+		.mempool_sz = RVCB_MIN_MEMPOOL_SZ + 32,
 	};
 #if 0 // TODO: change to new gpio
 	gpio_set_direction(GPIO_NUM_8, GPIO_MODE_OUTPUT);
