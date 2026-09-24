@@ -101,6 +101,13 @@ static inline uint16_t bytetos(uint8_t high_byte, uint8_t low_byte)
 	return ((uint16_t) high_byte << 8) | low_byte;
 }
 
+/**
+ * Returns:
+ *     0 - success
+ *     -1 - send request
+ *     -2 - received message is empty or error occured
+ *     -3 - incorrect checksum
+ */
 static int request_msg(uint8_t *mmsg,
     uint32_t mlen,
     uint8_t *smsg,
@@ -119,11 +126,11 @@ static int request_msg(uint8_t *mmsg,
 	}
 	if ((sz = rs485_receive_msg(smsg, *slen, ms)) <= 0) {
 		ERROR("received message size is <= 0");
-		return -1;
+		return -2;
 	}
 	if ((err = check_message_checksum(smsg, sz))) {
 		ERROR("received message checksum is incorrect");
-		return -1;
+		return -3;
 	}
 	// TODO: check received message for correctness
 	return 0;
@@ -219,10 +226,10 @@ int chrg_find()
 	    ARRAY_SIZE(find_charger_msg),
 	    status_msg,
 	    &sz,
-	    150);
-	CHRG_NAME = status_msg[0];
-	if (err)
+	    300);
+	if (err < 0)
 		return -1;
+	CHRG_NAME = status_msg[0];
 	static uint8_t master_message[8] = { 0x00,
 		0x03,
 		0x00,
@@ -236,7 +243,7 @@ int chrg_find()
 	    charger_settings,
 	    &sz,
 	    250);
-	if (err)
+	if (err < 0)
 		return -1;
 	// Напряжение включения меньше 1320В
 	uint16_t smart_connect_val =

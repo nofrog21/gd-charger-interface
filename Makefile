@@ -25,6 +25,12 @@ printf "%s\n" \
 printf "%s\n" \
 "source $(BUILD_DIR)/gdbinit/symbols" \
 "source $(BUILD_DIR)/gdbinit/connect" \
+"define reflash" \
+"monitor reset halt" \
+"monitor program $(BUILD_DIR)/firmware.bin 0x08000000 verify" \
+"file $(BUILD_DIR)/firmware.elf" \
+"monitor reset halt" \
+"end" \
 > $(BUILD_DIR)/gdbinit/gdbinit
 endef
 

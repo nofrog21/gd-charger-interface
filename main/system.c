@@ -29,6 +29,5 @@ int main(void)
 	if (SysTick_Config(SystemCoreClock / 1000)) {
 		__builtin_trap();
 	}
-	nvic_irq_enable(SysTick_IRQn, 0, 0);
 	app_main();
 }

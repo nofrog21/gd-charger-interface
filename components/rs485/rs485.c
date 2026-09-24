@@ -106,6 +106,8 @@ void USART1_IRQHandler(void)
 			__DMB();
 			tx_buffer.tail =
 			    (tail + 1) & (RS485_TX_RING_BUF_SZ - 1);
+		} else {
+			usart_interrupt_disable(USART_PORT, USART_INT_TBE);
 		}
 	}
 }
@@ -117,12 +119,14 @@ void rs485_init(void)
 	rcu_periph_clock_enable(RCU_USART_PORT);
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_AF_PP, GPIO_OSPEED_2MHZ, PIN_TX);
 	gpio_init(GPIO_USART_PORT,
-	    GPIO_MODE_IN_FLOATING,
+	    GPIO_MODE_IPU,
 	    GPIO_OSPEED_2MHZ,
 	    PIN_RX);
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, PIN_DE);
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, PIN_RE);
-	usart_stop_bit_set(USART_PORT, USART_STB_1BIT);
+	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
+	gpio_bit_set(GPIO_USART_PORT, PIN_RE);
+	usart_stop_bit_set(USART_PORT, USART_STB_2BIT);
 	usart_word_length_set(USART_PORT, USART_WL_8BIT);
 	usart_transmit_config(USART_PORT, USART_TRANSMIT_ENABLE);
 	usart_receive_config(USART_PORT, USART_RECEIVE_ENABLE);
@@ -140,10 +144,13 @@ void rs485_init(void)
 	usart_enable(USART_PORT);
 }
 
+/**
+ * Returns:
+ *     0 - success
+ *     -RS485_ENOSPACE - push to ring buffer failed
+ */
 int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 {
-	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
-	gpio_bit_set(GPIO_USART_PORT, PIN_RE);
 	int head = tx_buffer.head;
 	int tail = tx_buffer.tail;
 	if (ring_buf_space(head, tail, RS485_TX_RING_BUF_SZ) >= sz) {
@@ -165,6 +172,8 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 		// not enough space
 		return -RS485_ENOSPACE;
 	}
+	gpio_bit_set(GPIO_USART_PORT, PIN_DE);
+	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
 	usart_interrupt_enable(USART_PORT, USART_INT_TBE);
 	// wait until the ISR has pushed every queued byte into the data
 	// register, otherwise the USART_FLAG_TC test below can pass on a stale
@@ -175,19 +184,23 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 	{
 		__WFI();
 	}
-	usart_interrupt_disable(USART_PORT, USART_INT_TBE);
 	// wait until the last byte has left the shift register
 	while (RESET == usart_flag_get(USART_PORT, USART_FLAG_TC)) {
 		__WFI();
 	}
 	// The transmit path of this USART has no error flags to poll (ORERR/
 	// FERR/NERR/PERR are receive-side only); nothing to check here.
-	gpio_bit_set(GPIO_USART_PORT, PIN_DE);
-	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
+	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
+	gpio_bit_set(GPIO_USART_PORT, PIN_RE);
 
 	return 0;
 }
 
+/**
+ * Returns:
+ *     0 - success
+ *     -RS485_EPERIPH - errors in peripheral
+ */
 int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t ms)
 {
 	uint64_t start = sys_clock_get_ms();
@@ -201,7 +214,7 @@ int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t ms)
 		int head = rx_buffer.head;
 		if (ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ) >= sz) {
 			size_t rg_cnt_to_end =
-			    ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ);
+			    ring_buf_cnt_to_end(head, tail, RS485_RX_RING_BUF_SZ);
 			size_t first_copy_sz =
 			    rg_cnt_to_end > sz ? sz : rg_cnt_to_end;
 			memcpy(msg, rx_buffer.data + tail, first_copy_sz);
