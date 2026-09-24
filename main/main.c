@@ -370,17 +370,6 @@ static inline uint64_t send_status(struct rvcb_node *rvcb_node)
 void app_main()
 {
 #define LOG_TAG "app_main"
-#if 0
-	static esp_pm_lock_handle_t pm_lock_handle;
-	ESP_ERROR_CHECK(esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP,
-		0, "uart lock", &pm_lock_handle));
-	esp_pm_config_t pm_config = {
-		.max_freq_mhz = 80,
-		.min_freq_mhz = 80,
-		.light_sleep_enable = false,
-	};
-	ESP_ERROR_CHECK(esp_pm_configure(&pm_config));
-#endif
 	rs485_init();
 	int rerr = 0;
 	struct rvcb_node rvcb_node;
@@ -394,10 +383,6 @@ void app_main()
 		.mempool = malloc(RVCB_MIN_MEMPOOL_SZ + 32),
 		.mempool_sz = RVCB_MIN_MEMPOOL_SZ + 32,
 	};
-#if 0 // TODO: change to new gpio
-	gpio_set_direction(GPIO_NUM_8, GPIO_MODE_OUTPUT);
-	gpio_set_level(GPIO_NUM_8, 0);
-#endif
 	rerr = rvcb_init(&rvcb_node, &node_cnfg);
 	if (rerr) {
 		ERROR("Failed to init RV-C bus");

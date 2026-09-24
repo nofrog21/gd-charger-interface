@@ -91,8 +91,19 @@ int rvcb_can_init(struct rvcb_can_driver_data **can_driver_data,
 	rcu_periph_clock_enable(RCU_CAN_PORT);
 	rcu_periph_clock_enable(RCU_AF);
 
-	gpio_init(GPIOA, GPIO_MODE_IPU, GPIO_OSPEED_50MHZ, GPIO_PIN_11);
-	gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_12);
+	gpio_init(GPIOA,
+	    GPIO_MODE_IPU,
+	    GPIO_OSPEED_50MHZ,
+	    GPIO_PIN_11);
+	gpio_init(GPIOA,
+	    GPIO_MODE_AF_PP,
+	    GPIO_OSPEED_50MHZ,
+	    GPIO_PIN_12);
+	gpio_init(GPIOA,
+	    GPIO_MODE_OUT_PP,
+	    GPIO_OSPEED_50MHZ,
+	    GPIO_PIN_8);
+	gpio_bit_set(GPIOA, GPIO_PIN_8);
 
 	can_parameter_struct            can_parameter;
 	can_filter_parameter_struct     can_filter;
