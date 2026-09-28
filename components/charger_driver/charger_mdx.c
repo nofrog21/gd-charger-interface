@@ -5,6 +5,8 @@
 
 #include <string.h>
 
+#define UNREACHABLE __asm__ ("BKPT")
+
 #define HEADER_SZ         6
 #define TOGGLE_POWER_GPIO 0
 
@@ -72,11 +74,11 @@ static int request_msg(uint8_t *mmsg,
     uint32_t mlen,
     uint8_t *smsg,
     uint32_t *slen,
-    uint64_t ms)
+    uint64_t delay)
 {
 #define LOG_TAG "request_msg"
+#define TIME_PER_BYTE 2 /* ms */
 	int err = 0;
-	int sz;
 	uint16_t crc = calc_checksum(mmsg, mlen - 2);
 	mmsg[mlen - 2] = crc & 0xff;
 	mmsg[mlen - 1] = crc >> 8;
@@ -84,19 +86,52 @@ static int request_msg(uint8_t *mmsg,
 		ERROR("failed to send request");
 		return -1;
 	}
-	if ((sz = rs485_receive_msg(smsg, *slen, ms)) <= 0) {
-		ERROR("received message size is <= 0");
+	uint8_t message_sz;
+	size_t header_size = 5 + sizeof (message_sz);
+	err = rs485_receive_msg(smsg,
+	    header_size,
+	    delay + (header_size) * TIME_PER_BYTE);
+	switch (err) {
+	case 0:
+		break;
+	case -RS485_ETIMEOUT:
+		return -2;
+	case -RS485_EPERIPH: {
+		volatile uint32_t rs485_err_mask = rs485_get_errors();
+		// TODO:
+		(void) rs485_err_mask;
 		return -1;
 	}
-	if ((err = check_message_checksum(smsg, sz))) {
+	default:
+		UNREACHABLE;
+	}
+	size_t offset = header_size - sizeof (message_sz);
+	message_sz = smsg[offset];
+	if (message_sz > *slen) {
+		return -1;
+	}
+	err = rs485_receive_msg(smsg + header_size,
+	    message_sz - header_size,
+	    (message_sz - header_size) * TIME_PER_BYTE);
+	switch (err) {
+	case 0:
+		break;
+	case -RS485_ETIMEOUT:
+		return -2;
+	case -RS485_EPERIPH:
+		return -1;
+	default:
+		UNREACHABLE;
+	}
+	*slen = message_sz;
+	if ((err = check_message_checksum(smsg, *slen))) {
 		ERROR("received message checksum is incorrect");
 		return -1;
 	}
-	if (sz >= 8 && (smsg[0] == 0x7e) && (smsg[1] == mmsg[2]) &&
+	if ((smsg[0] == 0x7e) && (smsg[1] == mmsg[2]) &&
 	    (smsg[2] == mmsg[1]) && (smsg[3] == mmsg[3]) &&
-	    (smsg[4] == mmsg[4]) && (sz == smsg[5]))
+	    (smsg[4] == mmsg[4]))
 	{
-		*slen = sz;
 		return 0;
 	}
 	ERROR("received message is formated incorrectly");

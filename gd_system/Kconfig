@@ -1,5 +1,5 @@
 menu "GigaDevice Configuration"
-     choice GD_TARGET
+      choice GD_TARGET
             prompt "Set target MC"
             default GD_TARGET_GD32F303
             help
@@ -11,4 +11,6 @@ menu "GigaDevice Configuration"
             config GD_TARGET_GD32F103
                 bool "GD32F103 mc family"
       endchoice
+      config GD_HXTAL_BYPASS
+             bool "Configure HXTAL in bypass mode"
 endmenu

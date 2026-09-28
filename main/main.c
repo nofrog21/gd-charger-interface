@@ -402,8 +402,11 @@ void app_main()
 			}
 #endif /* if 0 */
 			uint64_t start = sys_clock_get_ms();
-			while (sys_clock_get_ms() - start <= 1000)
+			uint64_t end = sys_clock_get_ms();
+			while (end - start <= 1000) {
 				__WFI();
+				end = sys_clock_get_ms();
+			}
 		} else {
 			break;
 		}

@@ -4,15 +4,16 @@
 #define LOG_ENABLE
 #include "log.h"
 
+#include <assert.h>
 #include <string.h>
+
+#define UNREACHABLE __asm__ ("BKPT")
 
 const uint8_t CHRG_MAX_CURRENT = 30;
 const uint8_t CHRG_MIN_CURRENT = 5;
 const uint8_t INSTANCE = 1;
 
-// TODO: поменять на gd совместимые
-#define TOGGLE_POWER_GPIO 0
-#define DRY_CTRL_GPIO     5
+#define TOGGLE_POWER_GPIO BIT(0)
 
 #ifndef ARRAY_SIZE
 #  define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -102,38 +103,76 @@ static inline uint16_t bytetos(uint8_t high_byte, uint8_t low_byte)
 }
 
 /**
+ * Requests message from charger, waits max `delay` ms before receiving
  * Returns:
  *     0 - success
- *     -1 - send request
- *     -2 - received message is empty or error occured
- *     -3 - incorrect checksum
+ *     -1 - request failed
+ *     -2 - timeout
  */
 static int request_msg(uint8_t *mmsg,
     uint32_t mlen,
     uint8_t *smsg,
     uint32_t *slen,
-    uint64_t ms)
+    uint64_t delay)
 {
 #define LOG_TAG "request_msg"
+#define TIME_PER_BYTE 2 /* ms */
 	int err = 0;
-	int sz;
 	uint16_t crc = calc_checksum(mmsg, mlen - 2);
 	mmsg[mlen - 2] = crc & 0xff;
 	mmsg[mlen - 1] = crc >> 8;
-	if ((err = rs485_request_msg(mmsg, mlen))) {
+	if ((err = rs485_request_msg(mmsg, mlen)) < 0) {
 		ERROR("failed to send request");
 		return -1;
 	}
-	if ((sz = rs485_receive_msg(smsg, *slen, ms)) <= 0) {
-		ERROR("received message size is <= 0");
+	uint8_t data_sz;
+	size_t header_size = 3 + sizeof (data_sz);
+	if (smsg[1] == 6) {
+		header_size += 2;
+	}
+	err = rs485_receive_msg(smsg,
+	    header_size,
+	    delay + (header_size) * TIME_PER_BYTE);
+	switch (err) {
+	case 0:
+		break;
+	case -RS485_ETIMEOUT:
 		return -2;
+	case -RS485_EPERIPH: {
+		volatile uint32_t rs485_err_mask = rs485_get_errors();
+		// TODO:
+		(void) rs485_err_mask;
+		return -1;
 	}
-	if ((err = check_message_checksum(smsg, sz))) {
-		ERROR("received message checksum is incorrect");
-		return -3;
+	default:
+		UNREACHABLE;
 	}
-	// TODO: check received message for correctness
-	return 0;
+	size_t offset = header_size - sizeof (data_sz);
+	data_sz = smsg[offset];
+	if (header_size + data_sz + 2 > *slen) {
+		return -1;
+	}
+	err = rs485_receive_msg(smsg + header_size, data_sz + 2, (data_sz + 2) * TIME_PER_BYTE);
+	switch (err) {
+	case 0:
+		break;
+	case -RS485_ETIMEOUT:
+		return -2;
+	case -RS485_EPERIPH:
+		return -1;
+	default:
+		UNREACHABLE;
+	}
+	*slen = header_size + data_sz + 2;
+	if ((err = check_message_checksum(smsg, *slen)) < 0) {
+		ERROR("received message with incorrect checksum");
+		return -1;
+	}
+	if ((mmsg[0] == 0xf7 || mmsg[0] == smsg[0]) &&
+	    (mmsg[0] == smsg[0])) {
+		return 0;
+	}
+	return -1;
 #undef LOG_TAG
 }
 
@@ -151,7 +190,7 @@ int chrg_get_rt_data(struct chrg_runtime_data *rt_data)
 	int err;
 	uint32_t sz = STATUS_MSG_SZ;
 	if (charger_manual_turnoff &&
-	    (sys_clock_get_ms() - charger_manual_turnoff_time) > 5000000)
+	    (sys_clock_get_ms() - charger_manual_turnoff_time) > 5000)
 	{
 		chrg_toggle_power(1);
 		charger_manual_turnoff = 0;
@@ -161,7 +200,7 @@ int chrg_get_rt_data(struct chrg_runtime_data *rt_data)
 	    ARRAY_SIZE(master_message),
 	    status_msg,
 	    &sz,
-	    150);
+	    10);
 	if (err)
 		return -1;
 	if (bytetos(status_msg[8], status_msg[9]) < DEFAULT_TURNOFF_V) {
@@ -226,7 +265,7 @@ int chrg_find()
 	    ARRAY_SIZE(find_charger_msg),
 	    status_msg,
 	    &sz,
-	    300);
+	    10);
 	if (err < 0)
 		return -1;
 	CHRG_NAME = status_msg[0];
@@ -242,7 +281,7 @@ int chrg_find()
 	    ARRAY_SIZE(master_message),
 	    charger_settings,
 	    &sz,
-	    250);
+	    10);
 	if (err < 0)
 		return -1;
 	// Напряжение включения меньше 1320В
@@ -305,18 +344,17 @@ int chrg_flush_settings()
 		0x00,
 		0x00,
 		0x02 };
-	uint32_t sz = ARRAY_SIZE(r_message);
 	master_message[0] = CHRG_NAME;
 	for (size_t i = cached_settings_epos; i < cached_settings_sz; ++i) {
+		uint32_t sz = ARRAY_SIZE(r_message);
 		master_message[3] = cached_settings_regs[i];
 		master_message[6] = cached_settings[i] >> 8;
 		master_message[7] = cached_settings[i] & 0xFF;
-		// TODO: write settings to charger
 		err = request_msg(master_message,
 		    ARRAY_SIZE(master_message),
 		    r_message,
 		    &sz,
-		    150);
+		    50);
 		if (err) {
 			cached_settings_epos = i;
 			return -1;

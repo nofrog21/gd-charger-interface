@@ -50,10 +50,12 @@ static struct {
 // RS485_RXERR_* flags latched by the ISR, consumed by rs485_get_errors()
 static volatile uint32_t rx_errors;
 
-// Latch the USART reception error flags reported for the byte currently in the
-// data register. On GD32F30x ORERR/FERR/NERR/PERR share the "read STAT0 then
-// read DATA" clear sequence with RBNE, so reading them here and then calling
-// usart_data_receive() clears them in hardware.
+/**
+ * Latch the USART reception error flags reported for the byte currently in the
+ * data register. On GD32F30x ORERR/FERR/NERR/PERR share the "read STAT0 then
+ * read DATA" clear sequence with RBNE, so reading them here and then calling
+ * usart_data_receive() clears them in hardware.
+ */
 static void rs485_latch_rx_errors(void)
 {
 	if (RESET != usart_flag_get(USART_PORT, USART_FLAG_ORERR)) {
@@ -77,7 +79,7 @@ void USART1_IRQHandler(void)
 #endif
 {
 	// Receive data
-	if (RESET != usart_interrupt_flag_get(USART_PORT, USART_INT_FLAG_RBNE))
+	if (RESET != usart_interrupt_flag_get(USART_PORT, USART_INT_FLAG_RBNE_ORERR))
 	{
 		rs485_latch_rx_errors();
 		// Always drain the data register, even when the ring buffer is
@@ -125,30 +127,27 @@ void rs485_init(void)
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, PIN_DE);
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, PIN_RE);
 	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
-	gpio_bit_set(GPIO_USART_PORT, PIN_RE);
+	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
+	// TODO: add config structure
 	usart_stop_bit_set(USART_PORT, USART_STB_2BIT);
 	usart_word_length_set(USART_PORT, USART_WL_8BIT);
-	usart_transmit_config(USART_PORT, USART_TRANSMIT_ENABLE);
-	usart_receive_config(USART_PORT, USART_RECEIVE_ENABLE);
 	usart_baudrate_set(USART_PORT, 9600);
+	usart_parity_config(USART_PORT, USART_PM_NONE);
+	usart_receive_config(USART_PORT, USART_RECEIVE_ENABLE);
+	usart_transmit_config(USART_PORT, USART_TRANSMIT_DISABLE);
 	// Drop any error/status flags left over from a previous session so the
-	// first rs485_receive_msg() does not report a stale error.
-	usart_flag_clear(USART_PORT, USART_FLAG_ORERR);
-	usart_flag_clear(USART_PORT, USART_FLAG_FERR);
-	usart_flag_clear(USART_PORT, USART_FLAG_NERR);
-	usart_flag_clear(USART_PORT, USART_FLAG_PERR);
-	usart_flag_clear(USART_PORT, USART_FLAG_TC);
+	// first rs485_receive_msg() does not report a stale error. ORERR/FERR/
+	// NERR/PERR are read-only in STAT0 and can't be cleared by writing 0;
+	// they clear only on the "read STAT0 then read DATA" sequence
+	// (GD32F30x User Manual, 17.4.1).
+	(void) USART_STAT0(USART_PORT);
+	(void) usart_data_receive(USART_PORT);
 	rx_errors = 0;
 	nvic_irq_enable(USART_PORT_IRQn, 0, 0);
 	usart_interrupt_enable(USART_PORT, USART_INT_RBNE);
 	usart_enable(USART_PORT);
 }
 
-/**
- * Returns:
- *     0 - success
- *     -RS485_ENOSPACE - push to ring buffer failed
- */
 int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 {
 	int head = tx_buffer.head;
@@ -172,8 +171,10 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 		// not enough space
 		return -RS485_ENOSPACE;
 	}
+	usart_transmit_config(USART_PORT, USART_TRANSMIT_ENABLE);
+	usart_receive_config(USART_PORT, USART_RECEIVE_DISABLE);
 	gpio_bit_set(GPIO_USART_PORT, PIN_DE);
-	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
+	gpio_bit_set(GPIO_USART_PORT, PIN_RE);
 	usart_interrupt_enable(USART_PORT, USART_INT_TBE);
 	// wait until the ISR has pushed every queued byte into the data
 	// register, otherwise the USART_FLAG_TC test below can pass on a stale
@@ -185,26 +186,20 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 		__WFI();
 	}
 	// wait until the last byte has left the shift register
-	while (RESET == usart_flag_get(USART_PORT, USART_FLAG_TC)) {
-		__WFI();
-	}
+	while (RESET == usart_flag_get(USART_PORT, USART_FLAG_TC));
 	// The transmit path of this USART has no error flags to poll (ORERR/
 	// FERR/NERR/PERR are receive-side only); nothing to check here.
 	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
-	gpio_bit_set(GPIO_USART_PORT, PIN_RE);
-
+	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
+	usart_receive_config(USART_PORT, USART_RECEIVE_ENABLE);
+	usart_transmit_config(USART_PORT, USART_TRANSMIT_DISABLE);
 	return 0;
 }
 
-/**
- * Returns:
- *     0 - success
- *     -RS485_EPERIPH - errors in peripheral
- */
-int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t ms)
+int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t timeout_ms)
 {
 	uint64_t start = sys_clock_get_ms();
-	while (sys_clock_get_ms() - start < ms) {
+	while (sys_clock_get_ms() - start < timeout_ms) {
 		// Bail out if the ISR latched a USART reception error; the
 		// caller inspects the details via rs485_get_errors().
 		if (rx_errors != 0) {
@@ -229,11 +224,11 @@ int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t ms)
 			       (RS485_RX_RING_BUF_SZ - 1);
 			__DMB();
 			rx_buffer.tail = tail;
-			return sz;
+			return 0;
 		}
 		__WFI();
 	}
-	return 0;
+	return -RS485_ETIMEOUT;
 }
 
 size_t rs485_get_rx_data_sz()
