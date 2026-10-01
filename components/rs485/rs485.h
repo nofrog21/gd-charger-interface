@@ -41,7 +41,7 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz);
  *     -RS485_EPERIPH - reception error, call `rs485_get_errors()` for error mask
  *     -RS485_ETIMEOUT
  */
-int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t timeout_ms);
+int rs485_receive_msg(uint8_t *msg, size_t sz, uint64_t timeout_ms);
 size_t rs485_get_rx_data_sz();
 
 /**

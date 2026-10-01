@@ -1,11 +1,19 @@
 #include "autoconf.h"
+#include "rs485.h"
+#include "ring_buf.h"
+#include "sys_clock.h"
+
+#if defined(CONFIG_GD_TARGET_GD32F303) || defined(CONFIG_GD_TARGET_GD32F305)
 #include "gd32f30x_usart.h"
 #include "gd32f30x_gpio.h"
 #include "gd32f30x_rcu.h"
 #include "gd32f30x_misc.h"
-#include "rs485.h"
-#include "ring_buf.h"
-#include "sys_clock.h"
+#elif defined(CONFIG_GD_TARGET_GD32F103)
+#include "gd32f10x_usart.h"
+#include "gd32f10x_gpio.h"
+#include "gd32f10x_rcu.h"
+#include "gd32f10x_misc.h"
+#endif // CONFIG_GD_TARGET check
 
 #include <stdint.h>
 #include <string.h>
@@ -125,7 +133,7 @@ void rs485_init(void)
 	    GPIO_OSPEED_2MHZ,
 	    PIN_RX);
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, PIN_DE);
-	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, PIN_RE);
+	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_OD, GPIO_OSPEED_50MHZ, PIN_RE);
 	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
 	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
 	// TODO: add config structure
@@ -150,6 +158,8 @@ void rs485_init(void)
 
 int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 {
+	// clear errors
+	(void) rs485_get_errors();
 	int head = tx_buffer.head;
 	int tail = tx_buffer.tail;
 	if (ring_buf_space(head, tail, RS485_TX_RING_BUF_SZ) >= sz) {
@@ -196,7 +206,7 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 	return 0;
 }
 
-int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t timeout_ms)
+int rs485_receive_msg(uint8_t *msg, size_t sz, uint64_t timeout_ms)
 {
 	uint64_t start = sys_clock_get_ms();
 	while (sys_clock_get_ms() - start < timeout_ms) {
@@ -233,9 +243,9 @@ int rs485_receive_msg(uint8_t *msg, uint32_t sz, uint64_t timeout_ms)
 
 size_t rs485_get_rx_data_sz()
 {
-	return ring_buf_cnt(rx_buffer.head,
-	    rx_buffer.tail,
-	    RS485_RX_RING_BUF_SZ);
+	int head = rx_buffer.head;
+	int tail = rx_buffer.tail;
+	return ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ);
 }
 
 uint32_t rs485_get_errors(void)
