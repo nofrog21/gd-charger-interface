@@ -1,8 +1,14 @@
-#include "gd32f30x_gpio.h"
+#include "autoconf.h"
 #include "charger.h"
 #include "sys_clock.h"
 #define LOG_ENABLE
 #include "log.h"
+
+#if defined(CONFIG_GD_TARGET_GD32F303)
+#include "gd32f30x_gpio.h"
+#elif defined(CONFIG_GD_TARGET_GD32F103)
+#include "gd32f10x_gpio.h"
+#endif
 
 #include <assert.h>
 #include <string.h>
@@ -45,9 +51,7 @@ static size_t cached_settings_epos = 0;
 #define CONV_CONNECT_DIFF_REG        0x2c
 
 #define DEFAULT_TURNOFF_V 1280
-
-static uint8_t
-    find_charger_msg[10] = { 0xF7, 0xFF, 0x00, 0x07, 0x00, 0x02, 0x00, 0x01 };
+#define TIME_PER_BYTE 2 /* ms */
 
 /**
  * @breif Вспомогательные define, используются для обращения к массиву charger_settings
@@ -103,6 +107,39 @@ static inline uint16_t bytetos(uint8_t high_byte, uint8_t low_byte)
 }
 
 /**
+ * Requests charger address
+ * Returns:
+ *     0 - success
+ *     -1 - request failed
+ *     -2 - timeout
+ */
+static int request_address(uint8_t *address)
+{
+	int err;
+	static uint8_t find_charger_msg[10] =
+	    { 0xf7, 0xff, 0x00, 0x07, 0x00, 0x02, 0x00, 0x01, 0xd4, 0x66};
+	static uint8_t responce_msg[10];
+	if ((err = rs485_request_msg(find_charger_msg, ARRAY_SIZE(find_charger_msg))) < 0) {
+		ERROR("failed to send request");
+		return -1;
+	}
+	err = rs485_receive_msg(responce_msg, ARRAY_SIZE(responce_msg),
+	    10 + ARRAY_SIZE(responce_msg) * TIME_PER_BYTE);
+	switch (err) {
+	case 0:
+		break;
+	case -RS485_ETIMEOUT:
+		return -2;
+	case -RS485_EPERIPH:
+		return -1;
+	default:
+		UNREACHABLE;
+	}
+	*address = responce_msg[0];
+	return 0;
+}
+
+/**
  * Requests message from charger, waits max `delay` ms before receiving
  * Returns:
  *     0 - success
@@ -110,13 +147,12 @@ static inline uint16_t bytetos(uint8_t high_byte, uint8_t low_byte)
  *     -2 - timeout
  */
 static int request_msg(uint8_t *mmsg,
-    uint32_t mlen,
+    size_t mlen,
     uint8_t *smsg,
-    uint32_t *slen,
+    size_t *slen,
     uint64_t delay)
 {
 #define LOG_TAG "request_msg"
-#define TIME_PER_BYTE 2 /* ms */
 	int err = 0;
 	uint16_t crc = calc_checksum(mmsg, mlen - 2);
 	mmsg[mlen - 2] = crc & 0xff;
@@ -158,8 +194,12 @@ static int request_msg(uint8_t *mmsg,
 		break;
 	case -RS485_ETIMEOUT:
 		return -2;
-	case -RS485_EPERIPH:
+	case -RS485_EPERIPH: {
+		volatile uint32_t rs485_err_mask = rs485_get_errors();
+		// TODO:
+		(void) rs485_err_mask;
 		return -1;
+	}
 	default:
 		UNREACHABLE;
 	}
@@ -168,8 +208,8 @@ static int request_msg(uint8_t *mmsg,
 		ERROR("received message with incorrect checksum");
 		return -1;
 	}
-	if ((mmsg[0] == 0xf7 || mmsg[0] == smsg[0]) &&
-	    (mmsg[0] == smsg[0])) {
+	if ((mmsg[0] == smsg[0]) &&
+	    (mmsg[1] == smsg[1])) {
 		return 0;
 	}
 	return -1;
@@ -188,7 +228,7 @@ int chrg_get_rt_data(struct chrg_runtime_data *rt_data)
 		0x00,
 		0x1E };
 	int err;
-	uint32_t sz = STATUS_MSG_SZ;
+	size_t sz = STATUS_MSG_SZ;
 	if (charger_manual_turnoff &&
 	    (sys_clock_get_ms() - charger_manual_turnoff_time) > 5000)
 	{
@@ -255,20 +295,13 @@ void chrg_get_config(struct chrg_config *config)
 int chrg_find()
 {
 	int err = 0;
+	size_t sz;
 	gpio_init(GPIOA,
 	    GPIO_MODE_OUT_PP,
 	    GPIO_OSPEED_50MHZ,
 	    TOGGLE_POWER_GPIO);
 	chrg_toggle_power(1);
-	uint32_t sz = ARRAY_SIZE(status_msg);
-	err = request_msg(find_charger_msg,
-	    ARRAY_SIZE(find_charger_msg),
-	    status_msg,
-	    &sz,
-	    10);
-	if (err < 0)
-		return -1;
-	CHRG_NAME = status_msg[0];
+	err = request_address(&CHRG_NAME);
 	static uint8_t master_message[8] = { 0x00,
 		0x03,
 		0x00,
@@ -346,7 +379,7 @@ int chrg_flush_settings()
 		0x02 };
 	master_message[0] = CHRG_NAME;
 	for (size_t i = cached_settings_epos; i < cached_settings_sz; ++i) {
-		uint32_t sz = ARRAY_SIZE(r_message);
+		size_t sz = ARRAY_SIZE(r_message);
 		master_message[3] = cached_settings_regs[i];
 		master_message[6] = cached_settings[i] >> 8;
 		master_message[7] = cached_settings[i] & 0xFF;
