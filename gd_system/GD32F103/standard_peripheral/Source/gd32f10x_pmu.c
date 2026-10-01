@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_pmu.h"
+#include "gd32f10x_rcu.h"
 
 /*!
     \brief      reset PMU register

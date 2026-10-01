@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f30x_bkp.h"
+#include "gd32f30x_rcu.h"
 
 #define TAMPER_FLAG_SHIFT          ((uint8_t)8U)
 

@@ -311,7 +311,6 @@ typedef enum IRQn
 
 /* enum definitions */
 typedef enum {DISABLE = 0, ENABLE = !DISABLE} EventStatus, ControlStatus;
-typedef enum {FALSE = 0, TRUE = !FALSE} bool;
 typedef enum {RESET = 0, SET = !RESET} FlagStatus;
 typedef enum {ERROR = 0, SUCCESS = !ERROR} ErrStatus;
 
@@ -365,14 +364,6 @@ typedef enum {ERROR = 0, SUCCESS = !ERROR} ErrStatus;
 #define CRC_BASE              (AHB1_BUS_BASE + 0x0000B000U)  /*!< CRC base address                 */
 #define ENET_BASE             (AHB1_BUS_BASE + 0x00010000U)  /*!< ENET base address                */
 #define USBFS_BASE            (AHB1_BUS_BASE + 0x0FFE8000U)  /*!< USBFS base address               */
-
-/* define marco USE_STDPERIPH_DRIVER */
-#if !defined  USE_STDPERIPH_DRIVER
-#define USE_STDPERIPH_DRIVER
-#endif 
-#ifdef USE_STDPERIPH_DRIVER
-#include "gd32f10x_libopt.h"
-#endif /* USE_STDPERIPH_DRIVER */
 
 #ifdef cplusplus
 }

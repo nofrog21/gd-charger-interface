@@ -1,14 +1,10 @@
 #include "autoconf.h"
-#ifdef CONFIG_GD_TARGET_GD32F303
-#include "gd32f30x.h"
-#include "gd32f30x_misc.h"
-#endif // CONFIG_GD_TARGET_GD32F303
 
-#ifdef CONFIG_GD_TARGET_GD32F103
+#if defined(CONFIG_GD_TARGET_GD32F303) || defined(CONFIG_GD_TARGET_GD32F305)
+#include "gd32f30x.h"
+#elif defined(CONFIG_GD_TARGET_GD32F103)
 #include "gd32f10x.h"
-#include "system_gd32f10x.h"
-#include "gd32f10x_misc.h"
-#endif // CONFIG_GD_TARGET_GD32F103
+#endif // CONFIG_GD_TARGET_GD32
 
 void app_main(void);
 

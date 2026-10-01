@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_adc.h"
+#include "gd32f10x_rcu.h"
 
 /* discontinuous mode macro*/
 #define  ADC_CHANNEL_LENGTH_SUBTRACT_ONE            ((uint8_t)1U)

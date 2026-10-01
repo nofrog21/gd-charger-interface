@@ -45,7 +45,7 @@ OF SUCH DAMAGE.
 #define USART0                        (USART_BASE+(0x0000F400U))       /*!< USART0 base address */
 
 /* registers definitions */
-#define USART_STAT(usartx)            REG32((usartx) + (0x00000000U))  /*!< USART status register */
+#define USART_STAT0(usartx)            REG32((usartx) + (0x00000000U))  /*!< USART status register */
 #define USART_DATA(usartx)            REG32((usartx) + (0x00000004U))  /*!< USART data register */
 #define USART_BAUD(usartx)            REG32((usartx) + (0x00000008U))  /*!< USART baud rate register */
 #define USART_CTL0(usartx)            REG32((usartx) + (0x0000000CU))  /*!< USART control register 0 */

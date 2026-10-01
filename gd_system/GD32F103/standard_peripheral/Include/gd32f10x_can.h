@@ -419,7 +419,7 @@ typedef struct
     uint8_t tx_ft;                                                      /*!< type of frame, data or remote */
     uint8_t tx_dlen;                                                    /*!< data length */
     uint8_t tx_data[64];                                                 /*!< transmit data */
-}can_trasnmit_message_struct;
+}can_transmit_message_struct;
 
 /* CAN receive message structure */
 typedef struct
@@ -452,10 +452,10 @@ typedef enum
 {
     CAN_ERROR_NONE = 0,                                                 /*!< no error */
     CAN_ERROR_FILL,                                                     /*!< fill error */
-    CAN_ERROR_FORMATE,                                                  /*!< format error */
+    CAN_ERROR_FORMAT,                                                  /*!< format error */
     CAN_ERROR_ACK,                                                      /*!< ACK error */
     CAN_ERROR_BITRECESSIVE,                                             /*!< bit recessive error */
-    CAN_ERROR_BITDOMINANTER,                                            /*!< bit dominant error */
+    CAN_ERROR_BITDOMINANT,                                            /*!< bit dominant error */
     CAN_ERROR_CRC,                                                      /*!< CRC error */
     CAN_ERROR_SOFTWARECFG,                                              /*!< software configure */
 }can_error_enum;
@@ -717,7 +717,7 @@ void can_time_trigger_mode_disable(uint32_t can_periph);
 
 /* transmit functions */
 /* transmit CAN message */
-uint8_t can_message_transmit(uint32_t can_periph, can_trasnmit_message_struct* transmit_message);
+uint8_t can_message_transmit(uint32_t can_periph, can_transmit_message_struct* transmit_message);
 /* get CAN transmit state */
 can_transmit_state_enum can_transmit_states(uint32_t can_periph, uint8_t mailbox_number);
 /* stop CAN transmission */

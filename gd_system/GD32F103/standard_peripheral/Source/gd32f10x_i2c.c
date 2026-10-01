@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_i2c.h"
+#include "gd32f10x_rcu.h"
 
 /* I2C register bit mask */
 #define I2CCLK_MAX                    ((uint32_t)0x00000036U)             /*!< i2cclk maximum value */

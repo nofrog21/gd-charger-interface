@@ -66,18 +66,6 @@ caddr_t _sbrk(int incr)
     return curbrk - incr;
 }
 
-/* _gettimeofday primitive (Stub function) */
-int _gettimeofday(struct timeval *tp, struct timezone *tzp)
-{
-    /* Return fixed data for the timezone.  */
-    if(tzp) {
-        tzp->tz_minuteswest = 0;
-        tzp->tz_dsttime = 0;
-    }
-
-    return 0;
-}
-
 void initialise_monitor_handles()
 {
 }

@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_spi.h"
+#include "gd32f10x_rcu.h"
 
 /* SPI/I2S parameter initialization mask */
 #define SPI_INIT_MASK                   ((uint32_t)0x00003040U)  /*!< SPI parameter initialization mask */

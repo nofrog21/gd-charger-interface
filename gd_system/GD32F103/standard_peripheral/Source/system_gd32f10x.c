@@ -36,6 +36,8 @@ OF SUCH DAMAGE.
 /* This file refers the CMSIS standard, some adjustments are made according to GigaDevice chips */
 
 #include "gd32f10x.h"
+#include "gd32f10x_rcu.h"
+#include "gd32f10x_misc.h"
 
 /* system frequency define */
 #define __IRC8M           (IRC8M_VALUE)            /* internal 8 MHz RC oscillator frequency */
@@ -1014,6 +1016,7 @@ static void system_clock_108m_irc8m(void)
     while(RCU_SCSS_PLL != (RCU_CFG0 & RCU_CFG0_SCSS)){
     }
 }
+#endif
 
 /*!
     \brief      update the SystemCoreClock with current core clock retrieved from cpu registers
@@ -1115,7 +1118,6 @@ void SystemCoreClockUpdate(void)
     clk_exp = ahb_exp[idx];
     SystemCoreClock = SystemCoreClock >> clk_exp;
 }
-#endif
 
 #ifdef __FIRMWARE_VERSION_DEFINE
 /*!

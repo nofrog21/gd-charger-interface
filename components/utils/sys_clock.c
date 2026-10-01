@@ -1,5 +1,11 @@
+#include "autoconf.h"
 #include "sys_clock.h"
+
+#if defined(CONFIG_GD_TARGET_GD32F303) || defined(CONFIG_GD_TARGET_GD32F305)
 #include "gd32f30x.h"
+#elif defined(CONFIG_GD_TARGET_GD32F103)
+#include "gd32f10x.h"
+#endif // CONFIG_GD_TARGET_GD32
 
 #include <errno.h>
 #include <time.h>

@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_gpio.h"
+#include "gd32f10x_rcu.h"
 
 #define AFIO_EXTI_SOURCE_MASK              ((uint8_t)0x03U)         /*!< AFIO exti source selection mask*/  
 #define AFIO_EXTI_SOURCE_FIELDS            ((uint8_t)0x04U)         /*!< select AFIO exti source registers */

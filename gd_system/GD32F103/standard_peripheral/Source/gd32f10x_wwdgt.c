@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_wwdgt.h"
+#include "gd32f10x_rcu.h"
 
 /*!
     \brief      reset the window watchdog timer configuration

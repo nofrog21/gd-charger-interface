@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_timer.h"
+#include "gd32f10x_rcu.h"
 
 /* TIMER init parameter mask */
 #define ALIGNEDMODE_MASK            ((uint32_t)0x00000060U)   /*!< TIMER init parameter aligne dmode mask */

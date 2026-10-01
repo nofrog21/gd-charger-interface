@@ -3,7 +3,7 @@
 BUILD_DIR := build
 
 CC := arm-none-eabi-gcc
-CPPFLAGS := -I$(BUILD_DIR)/generated -DHXTAL_VALUE=24000000
+CPPFLAGS := -I$(BUILD_DIR)/generated
 CFLAGS := -Wall -Wextra -ggdb -ffunction-sections -fdata-sections \
 -specs=nano.specs -specs=nosys.specs -Os
 LDFLAGS := -Wl,--gc-sections -Wl,-Map=$(BUILD_DIR)/output.map

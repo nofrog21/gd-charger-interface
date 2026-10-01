@@ -33,6 +33,7 @@ OF SUCH DAMAGE.
 */
 
 #include "gd32f10x_dac.h"
+#include "gd32f10x_rcu.h"
 
 /* DAC register bit offset */
 #define OUT1_REG_OFFSET           ((uint32_t)0x00000010U)

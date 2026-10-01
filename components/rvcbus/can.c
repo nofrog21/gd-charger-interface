@@ -1,11 +1,19 @@
+#include "autoconf.h"
 #include "rvcbus.h"
 #include "ring_buf.h"
+#include "sys_clock.h"
+
+#if defined(CONFIG_GD_TARGET_GD32F303) || defined(CONFIG_GD_TARGET_GD32F305)
 #include "gd32f30x.h"
 #include "gd32f30x_can.h"
 #include "gd32f30x_gpio.h"
 #include "gd32f30x_rcu.h"
-#include "gd32f30x_misc.h"
-#include "sys_clock.h"
+#elif defined(CONFIG_GD_TARGET_GD32F103)
+#include "gd32f10x.h"
+#include "gd32f10x_can.h"
+#include "gd32f10x_gpio.h"
+#include "gd32f10x_rcu.h"
+#endif // CONFIG_GD_TARGET_GD32
 
 #include <assert.h>
 #include <string.h>
