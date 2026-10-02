@@ -13,7 +13,9 @@
 #include <assert.h>
 #include <string.h>
 
+#ifndef UNREACHABLE
 #define UNREACHABLE __asm__ ("BKPT")
+#endif
 
 const uint8_t CHRG_MAX_CURRENT = 30;
 const uint8_t CHRG_MIN_CURRENT = 5;
@@ -29,9 +31,9 @@ const uint8_t INSTANCE = 1;
 #define DB_START 147
 // "Имя" зарядного устройства, по умолчанию с0
 static uint8_t CHRG_NAME = 0xc0;
-#define STATUS_MSG_SZ 36
+#define STATUS_MSG_SZ 0x1E + 6
 static uint8_t status_msg[STATUS_MSG_SZ];
-#define SETTINGS_MSG_SZ 262
+#define SETTINGS_MSG_SZ 0xFF + 6
 // Не использовать вне вспомогательных define
 static uint8_t charger_settings[SETTINGS_MSG_SZ];
 static uint16_t cached_settings[9];
@@ -107,6 +109,31 @@ static inline uint16_t bytetos(uint8_t high_byte, uint8_t low_byte)
 }
 
 /**
+ * Returns:
+ *     0  - success
+ *     -1 - request_failed
+ *     -2 - timeout
+ */
+static inline int handle_rs485_receive_err(int err)
+{
+	switch (err) {
+	case 0:
+		break;
+	case -RS485_ETIMEOUT:
+		return -2;
+	case -RS485_EPERIPH: {
+		volatile uint32_t rs485_err_mask =
+		    rs485_get_errors();
+		(void) rs485_err_mask;
+		return -1;
+	}
+	default:
+		UNREACHABLE;
+	}
+	return 0;
+}
+
+/**
  * Requests charger address
  * Returns:
  *     0 - success
@@ -119,101 +146,123 @@ static int request_address(uint8_t *address)
 	static uint8_t find_charger_msg[10] =
 	    { 0xf7, 0xff, 0x00, 0x07, 0x00, 0x02, 0x00, 0x01, 0xd4, 0x66};
 	static uint8_t responce_msg[10];
+	rs485_clear();
 	if ((err = rs485_request_msg(find_charger_msg, ARRAY_SIZE(find_charger_msg))) < 0) {
 		ERROR("failed to send request");
 		return -1;
 	}
 	err = rs485_receive_msg(responce_msg, ARRAY_SIZE(responce_msg),
 	    10 + ARRAY_SIZE(responce_msg) * TIME_PER_BYTE);
-	switch (err) {
-	case 0:
-		break;
-	case -RS485_ETIMEOUT:
-		return -2;
-	case -RS485_EPERIPH:
+	if ((err = handle_rs485_receive_err(err)) < 0) {
+		return err;
+	}
+	if ((err = check_message_checksum(responce_msg, ARRAY_SIZE(responce_msg)))) {
 		return -1;
-	default:
-		UNREACHABLE;
+	}
+	const uint8_t *expected_msg =
+	    (uint8_t []) {responce_msg[0], 0xff, 0x80, 0x07, 0x00, 0x02, 0x00, responce_msg[0]};
+	if (memcmp(expected_msg, responce_msg, ARRAY_SIZE(responce_msg) - 2)) {
+		return -1;
 	}
 	*address = responce_msg[0];
 	return 0;
 }
 
 /**
- * Requests message from charger, waits max `delay` ms before receiving
+ * Requests status message (code 0x03) from charger
  * Returns:
- *     0 - success
+ *     0  - success
  *     -1 - request failed
  *     -2 - timeout
  */
-static int request_msg(uint8_t *mmsg,
-    size_t mlen,
-    uint8_t *smsg,
-    size_t *slen,
-    uint64_t delay)
+static int request_status_msg(uint8_t chrg_address,
+    uint16_t start_reg,
+    uint8_t responce_data_sz,
+    uint8_t *responce_msg)
 {
-#define LOG_TAG "request_msg"
-	int err = 0;
-	uint16_t crc = calc_checksum(mmsg, mlen - 2);
-	mmsg[mlen - 2] = crc & 0xff;
-	mmsg[mlen - 1] = crc >> 8;
-	if ((err = rs485_request_msg(mmsg, mlen)) < 0) {
-		ERROR("failed to send request");
-		return -1;
-	}
-	uint8_t data_sz;
-	size_t header_size = 3 + sizeof (data_sz);
-	if (smsg[1] == 6) {
-		header_size += 2;
-	}
-	err = rs485_receive_msg(smsg,
+	int err;
+	static uint8_t request_msg[8] = {0x00, 0x03};
+	// prepare and send request
+	request_msg[0] = chrg_address;
+	request_msg[2] = start_reg >> 8;
+	request_msg[3] = start_reg & 0xff;
+	request_msg[5] = responce_data_sz;
+	uint16_t crc = calc_checksum(request_msg,
+	    ARRAY_SIZE(request_msg) - 2);
+	request_msg[ARRAY_SIZE(request_msg) - 2] = crc >> 8;
+	request_msg[ARRAY_SIZE(request_msg) - 1] = crc & 0xff;
+	rs485_clear();
+	err = rs485_request_msg(request_msg, ARRAY_SIZE(request_msg));
+	if (err < 0) return -1;
+
+	// receive header
+	size_t header_size = 3 + sizeof (responce_data_sz);
+	err = rs485_receive_msg(responce_msg,
 	    header_size,
-	    delay + (header_size) * TIME_PER_BYTE);
-	switch (err) {
-	case 0:
-		break;
-	case -RS485_ETIMEOUT:
-		return -2;
-	case -RS485_EPERIPH: {
-		volatile uint32_t rs485_err_mask = rs485_get_errors();
-		// TODO:
-		(void) rs485_err_mask;
-		return -1;
+	    10 + header_size * TIME_PER_BYTE);
+	if ((err = handle_rs485_receive_err(err)) < 0) {
+		return err;
 	}
-	default:
-		UNREACHABLE;
+	// match header
+	if (chrg_address == responce_msg[0] && 0x03 == responce_msg[1]) return -1;
+	if (responce_msg[3] != responce_data_sz) return -1;
+
+	// receive data
+	err = rs485_receive_msg(responce_msg + header_size,
+	    responce_data_sz + 2,
+	    (responce_data_sz + 2) * TIME_PER_BYTE);
+	if ((err = handle_rs485_receive_err(err)) < 0) {
+		return err;
 	}
-	size_t offset = header_size - sizeof (data_sz);
-	data_sz = smsg[offset];
-	if (header_size + data_sz + 2 > *slen) {
-		return -1;
-	}
-	err = rs485_receive_msg(smsg + header_size, data_sz + 2, (data_sz + 2) * TIME_PER_BYTE);
-	switch (err) {
-	case 0:
-		break;
-	case -RS485_ETIMEOUT:
-		return -2;
-	case -RS485_EPERIPH: {
-		volatile uint32_t rs485_err_mask = rs485_get_errors();
-		// TODO:
-		(void) rs485_err_mask;
-		return -1;
-	}
-	default:
-		UNREACHABLE;
-	}
-	*slen = header_size + data_sz + 2;
-	if ((err = check_message_checksum(smsg, *slen)) < 0) {
+	if ((err = check_message_checksum(responce_msg, header_size + responce_data_sz + 2)) < 0) {
 		ERROR("received message with incorrect checksum");
 		return -1;
 	}
-	if ((mmsg[0] == smsg[0]) &&
-	    (mmsg[1] == smsg[1])) {
-		return 0;
+	return 0;
+}
+
+/**
+ * Requests set setting (0x06)
+ * Returns:
+ *     0  - success
+ *     -1 - request failed
+ *     -2 - timeout
+ */
+static int request_setting_msg(uint8_t chrg_address,
+    uint16_t reg_address,
+    const uint8_t *data,
+    uint16_t data_sz)
+{
+	int err;
+	static uint8_t request_msg[11] = {0x00, 0x06};
+	static uint8_t responce_msg[11];
+	// prepare and send request
+	size_t request_msg_sz = data_sz + 2 + sizeof (reg_address) + 2;
+	assert(ARRAY_SIZE(request_msg) < request_msg_sz);
+	request_msg[0] = chrg_address;
+	request_msg[2] = reg_address >> 8;
+	request_msg[3] = reg_address & 0xff;
+	memcpy(request_msg + 3, data, data_sz);
+	uint16_t crc = calc_checksum(request_msg, request_msg_sz - 2);
+	request_msg[request_msg_sz - 2] = crc >> 8;
+	request_msg[request_msg_sz - 1] = crc & 0xff;
+	rs485_clear();
+	err = rs485_request_msg(request_msg, request_msg_sz);
+	if (err < 0) {
+		return -1;
 	}
-	return -1;
-#undef LOG_TAG
+
+	// receive responce
+	err = rs485_receive_msg(responce_msg,
+	    request_msg_sz,
+	    50 + request_msg_sz * TIME_PER_BYTE);
+	if ((err = handle_rs485_receive_err(err)) < 0) {
+		return err;
+	}
+	if (memcmp(request_msg, responce_msg, request_msg_sz) != 0) {
+		return -1;
+	}
+	return 0;
 }
 
 int chrg_get_rt_data(struct chrg_runtime_data *rt_data)
@@ -221,27 +270,15 @@ int chrg_get_rt_data(struct chrg_runtime_data *rt_data)
 #define LOG_TAG "chrg_get_rt_data"
 	static uint8_t charger_manual_turnoff = 0;
 	static int64_t charger_manual_turnoff_time = 0;
-	static uint8_t master_message[8] = { 0x00,
-		0x03,
-		0x01,
-		0x00,
-		0x00,
-		0x1E };
 	int err;
-	size_t sz = STATUS_MSG_SZ;
 	if (charger_manual_turnoff &&
 	    (sys_clock_get_ms() - charger_manual_turnoff_time) > 5000)
 	{
 		chrg_toggle_power(1);
 		charger_manual_turnoff = 0;
 	}
-	master_message[0] = CHRG_NAME;
-	err = request_msg(master_message,
-	    ARRAY_SIZE(master_message),
-	    status_msg,
-	    &sz,
-	    10);
-	if (err)
+	err = request_status_msg(CHRG_NAME, 0x0100, 0x1e, status_msg);
+	if (err < 0)
 		return -1;
 	if (bytetos(status_msg[8], status_msg[9]) < DEFAULT_TURNOFF_V) {
 		chrg_toggle_power(0);
@@ -295,34 +332,21 @@ void chrg_get_config(struct chrg_config *config)
 int chrg_find()
 {
 	int err = 0;
-	size_t sz;
 	gpio_init(GPIOA,
 	    GPIO_MODE_OUT_PP,
 	    GPIO_OSPEED_50MHZ,
 	    TOGGLE_POWER_GPIO);
 	chrg_toggle_power(1);
 	err = request_address(&CHRG_NAME);
-	static uint8_t master_message[8] = { 0x00,
-		0x03,
-		0x00,
-		0x00,
-		0x00,
-		0xFF };
-	master_message[0] = CHRG_NAME;
-	sz = ARRAY_SIZE(charger_settings);
-	err = request_msg(master_message,
-	    ARRAY_SIZE(master_message),
-	    charger_settings,
-	    &sz,
-	    10);
-	if (err < 0)
-		return -1;
-	// Напряжение включения меньше 1320В
+	if (err < 0) return -1;
+	err = request_status_msg(CHRG_NAME, 0x0000, 0xFF, charger_settings);
+	if (err < 0) return -1;
 	uint16_t smart_connect_val =
 	    charger_settings_u16(SMART_CONNECT_DIFF_REG);
 	uint16_t smart_disconnect_val =
 	    charger_settings_u16(SMART_DISCONNECT_VOLTAGE_REG);
 	if (smart_connect_val + smart_disconnect_val < 1320) {
+		// Напряжение включения меньше 1320В
 		cached_settings[cached_settings_sz] =
 		    1320 - charger_settings_u16(SMART_DISCONNECT_VOLTAGE_REG);
 		cached_settings_regs[cached_settings_sz] =
@@ -370,33 +394,21 @@ int chrg_set_battery_type(enum chrg_battery_type value)
 int chrg_flush_settings()
 {
 	int err;
-	static uint8_t r_message[12];
-	static uint8_t master_message[10] = { 0x00,
-		0x06,
-		0x00,
-		0x00,
-		0x00,
-		0x02 };
-	master_message[0] = CHRG_NAME;
 	for (size_t i = cached_settings_epos; i < cached_settings_sz; ++i) {
-		size_t sz = ARRAY_SIZE(r_message);
-		master_message[3] = cached_settings_regs[i];
-		master_message[6] = cached_settings[i] >> 8;
-		master_message[7] = cached_settings[i] & 0xFF;
-		err = request_msg(master_message,
-		    ARRAY_SIZE(master_message),
-		    r_message,
-		    &sz,
-		    50);
+		err = request_setting_msg(CHRG_NAME,
+		    cached_settings_regs[i],
+		    (uint8_t []) {cached_settings[i] >> 8,
+				cached_settings[i] & 0xff},
+		    sizeof (cached_settings[i]));
 		if (err) {
 			cached_settings_epos = i;
 			return -1;
 		}
 		// Обновляем значения параметров после успешной записи
 		charger_settings_high(cached_settings_regs[i]) =
-		    master_message[6];
+		    cached_settings[i] >> 8;
 		charger_settings_low(cached_settings_regs[i]) =
-		    master_message[7];
+		    cached_settings[i] & 0xff;
 	}
 	chrg_clear_settings();
 	return 0;

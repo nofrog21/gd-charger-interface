@@ -49,4 +49,6 @@ size_t rs485_get_rx_data_sz();
  * call and clears them. Returns 0 when no reception error has occurred.
  */
 uint32_t rs485_get_errors(void);
+
+void rs485_clear(void);
 #endif

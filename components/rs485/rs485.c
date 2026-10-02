@@ -87,12 +87,9 @@ void USART1_IRQHandler(void)
 #endif
 {
 	// Receive data
-	if (RESET != usart_interrupt_flag_get(USART_PORT, USART_INT_FLAG_RBNE_ORERR))
+	if (RESET != usart_interrupt_flag_get(USART_PORT, USART_INT_FLAG_RBNE))
 	{
 		rs485_latch_rx_errors();
-		// Always drain the data register, even when the ring buffer is
-		// full: this clears RBNE/ORERR and keeps the ISR from
-		// re-triggering forever on an overrun.
 		uint8_t byte = (uint8_t) usart_data_receive(USART_PORT);
 		int head = rx_buffer.head;
 		int tail = rx_buffer.tail;
@@ -102,7 +99,6 @@ void USART1_IRQHandler(void)
 			rx_buffer.head =
 			    (head + 1) & (RS485_RX_RING_BUF_SZ - 1);
 		} else {
-			// software fifo overflow: byte dropped
 			rx_errors |= RS485_RX_EOVERRUN;
 		}
 	}
@@ -127,10 +123,10 @@ void rs485_init(void)
 	// determed by gpio port and usart number
 	rcu_periph_clock_enable(RCU_GPIO_USART_PORT);
 	rcu_periph_clock_enable(RCU_USART_PORT);
-	gpio_init(GPIO_USART_PORT, GPIO_MODE_AF_PP, GPIO_OSPEED_2MHZ, PIN_TX);
+	gpio_init(GPIO_USART_PORT, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, PIN_TX);
 	gpio_init(GPIO_USART_PORT,
 	    GPIO_MODE_IPU,
-	    GPIO_OSPEED_2MHZ,
+	    GPIO_OSPEED_50MHZ,
 	    PIN_RX);
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_PP, GPIO_OSPEED_50MHZ, PIN_DE);
 	gpio_init(GPIO_USART_PORT, GPIO_MODE_OUT_OD, GPIO_OSPEED_50MHZ, PIN_RE);
@@ -210,11 +206,6 @@ int rs485_receive_msg(uint8_t *msg, size_t sz, uint64_t timeout_ms)
 {
 	uint64_t start = sys_clock_get_ms();
 	while (sys_clock_get_ms() - start < timeout_ms) {
-		// Bail out if the ISR latched a USART reception error; the
-		// caller inspects the details via rs485_get_errors().
-		if (rx_errors != 0) {
-			return -RS485_EPERIPH;
-		}
 		int tail = rx_buffer.tail;
 		int head = rx_buffer.head;
 		if (ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ) >= sz) {
@@ -236,6 +227,11 @@ int rs485_receive_msg(uint8_t *msg, size_t sz, uint64_t timeout_ms)
 			rx_buffer.tail = tail;
 			return 0;
 		}
+		// Bail out if the ISR latched a USART reception error; the
+		// caller inspects the details via rs485_get_errors().
+		if (rx_errors != 0) {
+			return -RS485_EPERIPH;
+		}
 		__WFI();
 	}
 	return -RS485_ETIMEOUT;
@@ -256,4 +252,14 @@ uint32_t rs485_get_errors(void)
 	uint32_t errs = rx_errors;
 	rx_errors &= ~errs;
 	return errs;
+}
+
+void rs485_clear(void)
+{
+	int head = rx_buffer.head;
+	int tail = rx_buffer.tail;
+	tail = (tail + ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ)) &
+	    (RS485_RX_RING_BUF_SZ - 1);
+	__DMB();
+	rx_buffer.tail = tail;
 }
