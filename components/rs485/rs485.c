@@ -43,15 +43,15 @@
 
 #define RS485_RX_RING_BUF_SZ 2048
 static struct {
-	volatile int head; // written by ISR
-	volatile int tail; // read by app
+	volatile unsigned head; // written by ISR
+	volatile unsigned tail; // read by app
 	uint8_t data[RS485_RX_RING_BUF_SZ];
 } rx_buffer;
 
 #define RS485_TX_RING_BUF_SZ 1024
 static struct {
-	volatile int head; // written by app
-	volatile int tail; // read by ISR
+	volatile unsigned head; // written by app
+	volatile unsigned tail; // read by ISR
 	uint8_t data[RS485_TX_RING_BUF_SZ];
 } tx_buffer;
 
@@ -80,6 +80,8 @@ static void rs485_latch_rx_errors(void)
 	}
 }
 
+static volatile uint8_t last_received_byte;
+
 #if defined(CONFIG_RS485_USART0)
 void USART0_IRQHandler(void)
 #elif defined(CONFIG_RS485_USART1)
@@ -91,8 +93,9 @@ void USART1_IRQHandler(void)
 	{
 		rs485_latch_rx_errors();
 		uint8_t byte = (uint8_t) usart_data_receive(USART_PORT);
-		int head = rx_buffer.head;
-		int tail = rx_buffer.tail;
+		last_received_byte = byte;
+		unsigned head = rx_buffer.head;
+		unsigned tail = rx_buffer.tail;
 		if (ring_buf_space(head, tail, RS485_RX_RING_BUF_SZ) != 0) {
 			rx_buffer.data[head] = byte;
 			__DMB();
@@ -105,8 +108,8 @@ void USART1_IRQHandler(void)
 
 	// Transmit data
 	if (RESET != usart_interrupt_flag_get(USART_PORT, USART_INT_FLAG_TBE)) {
-		int head = tx_buffer.head;
-		int tail = tx_buffer.tail;
+		unsigned head = tx_buffer.head;
+		unsigned tail = tx_buffer.tail;
 		if (ring_buf_cnt(head, tail, RS485_TX_RING_BUF_SZ) != 0) {
 			usart_data_transmit(USART_PORT, tx_buffer.data[tail]);
 			__DMB();
@@ -133,19 +136,15 @@ void rs485_init(void)
 	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
 	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
 	// TODO: add config structure
-	usart_stop_bit_set(USART_PORT, USART_STB_2BIT);
+	usart_stop_bit_set(USART_PORT, USART_STB_1BIT);
 	usart_word_length_set(USART_PORT, USART_WL_8BIT);
 	usart_baudrate_set(USART_PORT, 9600);
 	usart_parity_config(USART_PORT, USART_PM_NONE);
+	usart_invert_config(USART_PORT, USART_TXPIN_DISABLE);
+	usart_invert_config(USART_PORT, USART_RXPIN_DISABLE);
+	usart_invert_config(USART_PORT, USART_DINV_DISABLE);
 	usart_receive_config(USART_PORT, USART_RECEIVE_ENABLE);
-	usart_transmit_config(USART_PORT, USART_TRANSMIT_DISABLE);
-	// Drop any error/status flags left over from a previous session so the
-	// first rs485_receive_msg() does not report a stale error. ORERR/FERR/
-	// NERR/PERR are read-only in STAT0 and can't be cleared by writing 0;
-	// they clear only on the "read STAT0 then read DATA" sequence
-	// (GD32F30x User Manual, 17.4.1).
-	(void) USART_STAT0(USART_PORT);
-	(void) usart_data_receive(USART_PORT);
+	usart_transmit_config(USART_PORT, USART_TRANSMIT_ENABLE);
 	rx_errors = 0;
 	nvic_irq_enable(USART_PORT_IRQn, 0, 0);
 	usart_interrupt_enable(USART_PORT, USART_INT_RBNE);
@@ -154,10 +153,16 @@ void rs485_init(void)
 
 int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 {
-	// clear errors
+	// Drop any error/status flags left over from a previous session so the
+	// first rs485_receive_msg() does not report a stale error. ORERR/FERR/
+	// NERR/PERR are read-only in STAT0 and can't be cleared by writing 0;
+	// they clear only on the "read STAT0 then read DATA" sequence
+	// (GD32F30x User Manual, 17.4.1).
 	(void) rs485_get_errors();
-	int head = tx_buffer.head;
-	int tail = tx_buffer.tail;
+	(void) USART_STAT0(USART_PORT);
+	(void) usart_data_receive(USART_PORT);
+	unsigned head = tx_buffer.head;
+	unsigned tail = tx_buffer.tail;
 	if (ring_buf_space(head, tail, RS485_TX_RING_BUF_SZ) >= sz) {
 		size_t rb_space_to_end =
 		    ring_buf_space_to_end(head, tail, RS485_TX_RING_BUF_SZ);
@@ -177,8 +182,6 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 		// not enough space
 		return -RS485_ENOSPACE;
 	}
-	usart_transmit_config(USART_PORT, USART_TRANSMIT_ENABLE);
-	usart_receive_config(USART_PORT, USART_RECEIVE_DISABLE);
 	gpio_bit_set(GPIO_USART_PORT, PIN_DE);
 	gpio_bit_set(GPIO_USART_PORT, PIN_RE);
 	usart_interrupt_enable(USART_PORT, USART_INT_TBE);
@@ -197,8 +200,6 @@ int rs485_request_msg(const uint8_t *rmsg, size_t sz)
 	// FERR/NERR/PERR are receive-side only); nothing to check here.
 	gpio_bit_reset(GPIO_USART_PORT, PIN_DE);
 	gpio_bit_reset(GPIO_USART_PORT, PIN_RE);
-	usart_receive_config(USART_PORT, USART_RECEIVE_ENABLE);
-	usart_transmit_config(USART_PORT, USART_TRANSMIT_DISABLE);
 	return 0;
 }
 
@@ -206,8 +207,8 @@ int rs485_receive_msg(uint8_t *msg, size_t sz, uint64_t timeout_ms)
 {
 	uint64_t start = sys_clock_get_ms();
 	while (sys_clock_get_ms() - start < timeout_ms) {
-		int tail = rx_buffer.tail;
-		int head = rx_buffer.head;
+		unsigned tail = rx_buffer.tail;
+		unsigned head = rx_buffer.head;
 		if (ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ) >= sz) {
 			size_t rg_cnt_to_end =
 			    ring_buf_cnt_to_end(head, tail, RS485_RX_RING_BUF_SZ);
@@ -227,9 +228,7 @@ int rs485_receive_msg(uint8_t *msg, size_t sz, uint64_t timeout_ms)
 			rx_buffer.tail = tail;
 			return 0;
 		}
-		// Bail out if the ISR latched a USART reception error; the
-		// caller inspects the details via rs485_get_errors().
-		if (rx_errors != 0) {
+		if (rx_errors != 0 && rx_errors != RS485_RX_EOVERRUN) {
 			return -RS485_EPERIPH;
 		}
 		__WFI();
@@ -239,8 +238,8 @@ int rs485_receive_msg(uint8_t *msg, size_t sz, uint64_t timeout_ms)
 
 size_t rs485_get_rx_data_sz()
 {
-	int head = rx_buffer.head;
-	int tail = rx_buffer.tail;
+	unsigned head = rx_buffer.head;
+	unsigned tail = rx_buffer.tail;
 	return ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ);
 }
 
@@ -256,8 +255,8 @@ uint32_t rs485_get_errors(void)
 
 void rs485_clear(void)
 {
-	int head = rx_buffer.head;
-	int tail = rx_buffer.tail;
+	unsigned head = rx_buffer.head;
+	unsigned tail = rx_buffer.tail;
 	tail = (tail + ring_buf_cnt(head, tail, RS485_RX_RING_BUF_SZ)) &
 	    (RS485_RX_RING_BUF_SZ - 1);
 	__DMB();

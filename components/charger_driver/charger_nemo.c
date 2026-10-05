@@ -189,8 +189,8 @@ static int request_status_msg(uint8_t chrg_address,
 	request_msg[5] = responce_data_sz;
 	uint16_t crc = calc_checksum(request_msg,
 	    ARRAY_SIZE(request_msg) - 2);
-	request_msg[ARRAY_SIZE(request_msg) - 2] = crc >> 8;
-	request_msg[ARRAY_SIZE(request_msg) - 1] = crc & 0xff;
+	request_msg[ARRAY_SIZE(request_msg) - 2] = crc & 0xff;
+	request_msg[ARRAY_SIZE(request_msg) - 1] = crc >> 8;
 	rs485_clear();
 	err = rs485_request_msg(request_msg, ARRAY_SIZE(request_msg));
 	if (err < 0) return -1;
@@ -204,8 +204,8 @@ static int request_status_msg(uint8_t chrg_address,
 		return err;
 	}
 	// match header
-	if (chrg_address == responce_msg[0] && 0x03 == responce_msg[1]) return -1;
-	if (responce_msg[3] != responce_data_sz) return -1;
+	if (!(chrg_address == responce_msg[0] && 0x03 == responce_msg[1])) return -1;
+	if (!(responce_msg[3] == responce_data_sz)) return -1;
 
 	// receive data
 	err = rs485_receive_msg(responce_msg + header_size,
@@ -237,15 +237,20 @@ static int request_setting_msg(uint8_t chrg_address,
 	static uint8_t request_msg[11] = {0x00, 0x06};
 	static uint8_t responce_msg[11];
 	// prepare and send request
-	size_t request_msg_sz = data_sz + 2 + sizeof (reg_address) + 2;
-	assert(ARRAY_SIZE(request_msg) < request_msg_sz);
+	size_t request_msg_sz = 2 +
+	    sizeof (reg_address) +
+	    sizeof (data_sz) +
+	    data_sz + 2;
+	assert(ARRAY_SIZE(request_msg) >= request_msg_sz);
 	request_msg[0] = chrg_address;
 	request_msg[2] = reg_address >> 8;
 	request_msg[3] = reg_address & 0xff;
-	memcpy(request_msg + 3, data, data_sz);
+	request_msg[4] = data_sz >> 8;
+	request_msg[5] = data_sz & 0xff;
+	memcpy(request_msg + 6, data, data_sz);
 	uint16_t crc = calc_checksum(request_msg, request_msg_sz - 2);
-	request_msg[request_msg_sz - 2] = crc >> 8;
-	request_msg[request_msg_sz - 1] = crc & 0xff;
+	request_msg[request_msg_sz - 2] = crc & 0xff;
+	request_msg[request_msg_sz - 1] = crc >> 8;
 	rs485_clear();
 	err = rs485_request_msg(request_msg, request_msg_sz);
 	if (err < 0) {
@@ -350,10 +355,11 @@ int chrg_find()
 		cached_settings[cached_settings_sz] =
 		    1320 - charger_settings_u16(SMART_DISCONNECT_VOLTAGE_REG);
 		cached_settings_regs[cached_settings_sz] =
-		    charger_settings_u16(SMART_DISCONNECT_VOLTAGE_REG);
+		    SMART_CONNECT_DIFF_REG;
 		cached_settings_sz += 1;
 		err = chrg_flush_settings();
 		if (err) {
+			chrg_clear_settings();
 			return -1;
 		}
 	}
@@ -374,6 +380,7 @@ int chrg_find()
 
 int chrg_set_max_chrg_current(uint8_t value)
 {
+	assert(cached_settings_sz < ARRAY_SIZE(cached_settings));
 	if (value < CHRG_MIN_CURRENT || value > CHRG_MAX_CURRENT) {
 		return -1;
 	}
@@ -387,6 +394,7 @@ int chrg_set_max_chrg_current(uint8_t value)
 
 int chrg_set_battery_type(enum chrg_battery_type value)
 {
+	assert(cached_settings_sz < ARRAY_SIZE(cached_settings));
 	(void) value;
 	return -1;
 }
@@ -395,11 +403,12 @@ int chrg_flush_settings()
 {
 	int err;
 	for (size_t i = cached_settings_epos; i < cached_settings_sz; ++i) {
+		static_assert(2 == sizeof (cached_settings[i]));
 		err = request_setting_msg(CHRG_NAME,
 		    cached_settings_regs[i],
 		    (uint8_t []) {cached_settings[i] >> 8,
 				cached_settings[i] & 0xff},
-		    sizeof (cached_settings[i]));
+		    2);
 		if (err) {
 			cached_settings_epos = i;
 			return -1;
